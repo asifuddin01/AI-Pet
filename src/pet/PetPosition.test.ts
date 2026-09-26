@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ScreenInfo } from "../types";
 import {
+  PET_BASE,
   BUBBLE_GAP,
   BUBBLE_PAD,
   clampPet,
@@ -104,7 +105,7 @@ describe("screens", () => {
 
   it("clamps into the visible area and scales with size", () => {
     expect(clampPet({ x: -500, y: -500 }, S, visible)).toEqual({ x: EDGE_MARGIN, y: visible.y + EDGE_MARGIN });
-    expect(petBoxSize(1.5)).toBe(180);
+    expect(petBoxSize(1.5)).toBe(Math.round(PET_BASE * 1.5));
     expect(compactFrame({ x: 1, y: 2 }, S)).toEqual({ x: 1, y: 2, width: S, height: S });
   });
 });

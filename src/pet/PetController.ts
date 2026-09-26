@@ -7,7 +7,10 @@ import { HISTORY_LIMIT } from "../ai/PromptBuilder";
 import type { PetTask, TaskContext } from "../ai/tasks";
 import { TaskRunner } from "../ai/TaskRunner";
 import { ChatBubble, type BubbleModel, type TranscriptLine } from "../components/ChatBubble";
+import type { CharacterKind, CharacterView } from "../components/CharacterView";
+import { ART_SIZE } from "../components/lucyArt";
 import { Pet } from "../components/Pet";
+import { SpritePet } from "../components/SpritePet";
 import type { MenuButton } from "../components/TaskMenu";
 import { ClipboardService } from "../services/ClipboardService";
 import { log, native, on } from "../services/native";
@@ -35,6 +38,19 @@ import {
 } from "./PetPosition";
 import { PetStateMachine } from "./PetState";
 import { RoamingController } from "./RoamingController";
+import {
+  decideMood,
+  MOOD_INFO,
+  MOOD_OUTFITS,
+  MoodTracker,
+  OUTFIT_IDS,
+  outfitById,
+  pickOutfit,
+  voiceFor,
+  type Mood,
+  type Outfit,
+  type OutfitId,
+} from "./Wardrobe";
 
 const ROAM_RESUME_MS = 4000;
 const SLEEP_AFTER_MS = 12 * 60_000;
@@ -46,6 +62,9 @@ const DRAG_THRESHOLD = 4;
 const POSITION_SAVE_MS = 2 * 60_000;
 /** Rough bubble height used to decide placement before the content is measured. */
 const BUBBLE_ESTIMATE = 260;
+/** How often Lucy reconsiders her mood (and maybe her outfit). */
+const MOOD_MIN_MS = 20 * 60_000;
+const MOOD_MAX_MS = 45 * 60_000;
 
 type View =
   | "none"
@@ -91,13 +110,21 @@ const FALLBACK_STATUS: AppStatus = {
  */
 export class PetController {
   private readonly fsm = new PetStateMachine();
-  private readonly pet: Pet;
+  private character: CharacterView;
+  /** Renderer actually in use (falls back to vector if a model/clip fails to load). */
+  private characterKind: CharacterKind = "vector";
+  private placement = { x: 0, y: 0 };
+  private swapping: Promise<void> | null = null;
+  private pendingNotice: { title: string; text: string } | null = null;
   private readonly bubble: ChatBubble;
   private readonly anim: AnimationController;
   private readonly roaming: RoamingController;
   private readonly tts: TTSService;
   private readonly runner: TaskRunner;
   private readonly selection = new SelectedTextService();
+  private readonly tracker = new MoodTracker();
+  private mood: Mood;
+  private moodTimer: ReturnType<typeof setTimeout> | undefined;
 
   private screens: ScreenInfo[] = [];
   private petPos: Point = { x: 0, y: 0 };
@@ -147,26 +174,35 @@ export class PetController {
     private status: AppStatus,
   ) {
     this.size = petBoxSize(settings.get().petSize);
-    this.pet = new Pet(root);
+    this.mood = decideMood(this.tracker.signals(false));
+    this.character = new Pet(root, this.initialOutfit(settings.get()));
     this.bubble = new ChatBubble(root, {
       onTask: (id) => void this.onTask(id),
       onAction: (id) => void this.onAction(id),
       onSubmit: (text) => void this.onSubmit(text),
       onClose: () => void this.closeBubble(),
     });
-    this.anim = new AnimationController(this.pet);
+    this.anim = new AnimationController(this.character);
     this.fsm.onChange((state) => {
       this.anim.apply(state);
       root.dataset.state = state.toLowerCase();
     });
 
-    this.tts = new TTSService(() => ({ voice: this.settings.get().voice, rate: this.settings.get().speechRate }));
+    this.tts = new TTSService(() => {
+      const delivery = voiceFor(this.mood);
+      return {
+        voice: this.settings.get().voice,
+        rate: this.settings.get().speechRate * delivery.rate,
+        pitch: delivery.pitch,
+      };
+    });
     this.tts.onSpeakingChange((speaking) => this.onSpeakingChange(speaking));
 
     const provider = new NativeAIProvider(() => (this.settings.get().requestTimeoutSecs + 15) * 1000);
     this.runner = new TaskRunner(provider, () => ({
       translateTarget: this.settings.get().translateTarget,
       autoSecondLanguage: this.settings.get().autoSecondLanguage,
+      mood: this.mood,
     }));
 
     this.roaming = new RoamingController({
@@ -180,7 +216,7 @@ export class PetController {
       moveTo: (target, ms) => this.moveTo(target, ms),
       stopMotion: () => this.stopMotion(),
       onWalkStart: (direction) => {
-        this.pet.setFacing(direction);
+        this.character.setFacing(direction);
         this.fsm.transition("WALKING");
       },
       onWalkEnd: (position) => {
@@ -205,10 +241,16 @@ export class PetController {
       on("open-chat", () => void this.openChat()),
     ]);
     this.settings.onChange((next, prev) => this.onSettingsChanged(next, prev));
-    this.bindPointer();
+    this.bindPointer(this.character.el);
     this.bindKeys();
+    await on("characters-changed", () => {
+      if (this.settings.get().character !== "vector") void this.swapCharacter();
+    });
+    this.character.setMood(this.mood);
+    if (this.settings.get().character !== "vector") await this.swapCharacter();
     // A cheap once-a-minute check that lets an ignored pet doze off.
     setInterval(() => this.checkSleep(), 60_000);
+    this.scheduleMood();
     if (this.settings.get().petEnabled) await this.enable();
   }
 
@@ -228,11 +270,18 @@ export class PetController {
       this.fsm.transition("IDLE");
       this.touch();
       log("info", "Pet enabled");
+      if (s.currentOutfit !== this.character.currentOutfit.id) {
+        void this.settings.update({ currentOutfit: this.character.currentOutfit.id }).catch(() => undefined);
+      }
       if (!s.firstRunCompleted) {
         await this.showOnboarding(0);
       } else if (this.status.hotkeyWarnings.length && !this.warnedHotkeys) {
         this.warnedHotkeys = true;
         await this.showNotice("Shortcut problem", this.status.hotkeyWarnings.join("\n"), true);
+      } else if (this.pendingNotice) {
+        const { title, text } = this.pendingNotice;
+        this.pendingNotice = null;
+        await this.showNotice(title, text, true);
       } else {
         this.anim.gesture("wave");
         this.scheduleRoamResume(1500);
@@ -284,7 +333,7 @@ export class PetController {
     this.preferSide = side;
     this.resetConversation();
     this.fsm.transition("INTERACTING");
-    await this.showBubble({ title: "Let me see…", text: "", textState: "thinking" }, "capturing");
+    await this.showBubble({ title: "Scanning…", text: "", textState: "thinking" }, "capturing");
     await native.showPet();
     this.anim.gesture("hop");
     if (e.seq !== this.activeSeq) return; // a newer press took over
@@ -322,7 +371,7 @@ export class PetController {
     if (!this.subject) return this.showNoSelection();
     await this.showBubble(
       {
-        title: "I found some text!",
+        title: "Got your text. What's the job?",
         quote: this.subject,
         tasks: this.taskButtons(),
         input: { placeholder: "Ask me anything about it…" },
@@ -346,12 +395,15 @@ export class PetController {
 
   private async showQuickMenu(): Promise<void> {
     const roaming = this.settings.get().roaming;
+    const info = MOOD_INFO[this.mood];
     await this.showBubble(
       {
-        title: "Hi there! What's up?",
+        title: info.greeting,
+        subtitle: `${info.emoji} Feeling ${this.mood} · wearing ${this.character.currentOutfit.name}`,
         tasks: [
           { id: "quick-chat", label: "Chat", icon: "💬" },
           { id: "quick-translate-clipboard", label: "Translate clipboard", icon: "🌐" },
+          { id: "quick-outfit", label: "Change outfit", icon: "✨" },
           { id: "quick-settings", label: "Settings", icon: "⚙️" },
           { id: "quick-roam", label: roaming ? "Pause roaming" : "Resume roaming", icon: roaming ? "⏸" : "▶️" },
         ],
@@ -372,7 +424,7 @@ export class PetController {
 
   private chatModel(): BubbleModel {
     return {
-      title: this.subject ? "Ask me about it" : "Hey! What can I help with?",
+      title: this.subject ? "Ask me about it" : MOOD_INFO[this.mood].greeting,
       quote: this.subject ?? undefined,
       transcript: this.transcript,
       input: { placeholder: this.subject ? "Ask about the selected text…" : "Ask me something…" },
@@ -383,7 +435,7 @@ export class PetController {
     const prompted = this.settings.get().accessibilityPrompted;
     await this.showBubble(
       {
-        title: "Enable selected-text access?",
+        title: "Let me read your selections?",
         text:
           `This permission allows me to read text you have selected so I can translate, explain, define, ` +
           `or process it when you press ${formatShortcut(this.settings.get().hotkey)}. ` +
@@ -422,9 +474,10 @@ export class PetController {
       this.onboardingStep = 0;
       await this.showBubble(
         {
-          title: "Hi! I'm your desktop pet.",
+          title: "Hey. I'm Lucy.",
           text:
-            "I can:\n- Chat with you\n- Translate selected text\n- Explain words\n- Summarize text\n- Speak responses\n\n" +
+            "Your desktop netrunner. I can:\n- Chat with you\n- Translate selected text\n- Explain words\n" +
+            "- Summarize text\n- Speak my answers\n- Change outfits when the mood hits\n\n" +
             `Press **${key}** anytime.`,
           actions: [{ id: "onboarding-next", label: "Nice to meet you!", primary: true }],
         },
@@ -444,10 +497,10 @@ export class PetController {
     this.onboardingStep = 2;
     await this.showBubble(
       {
-        title: "Connect your AI provider",
+        title: "Plug me into an AI",
         text:
           "Chat and text tasks need an AI provider — OpenAI, Anthropic, a local Ollama model and more. " +
-          "I'll still hang out on your desktop without one!",
+          "I'll still hang around without one.",
         actions: [
           { id: "onboarding-settings", label: "Open Settings", primary: true },
           { id: "onboarding-done", label: "Later" },
@@ -475,9 +528,16 @@ export class PetController {
         return this.openChat();
       case "quick-translate-clipboard": {
         const text = await ClipboardService.readText();
-        if (!text) return this.showNotice("Nothing to translate", "Your clipboard doesn't have any text right now.");
+        if (!text) return this.showNotice("Nothing to translate", "Your clipboard's got no text right now, choom.");
         this.subject = { text, truncated: false };
         return this.runTask("translate", { clipboardText: text });
+      }
+      case "quick-outfit": {
+        await this.closeBubble();
+        const next = pickOutfit(this.mood, this.character.currentOutfit.id);
+        if (this.settings.get().outfit !== "auto") await this.settings.update({ outfit: next });
+        else await this.changeOutfit(next);
+        return;
       }
       case "quick-settings":
         await this.closeBubble();
@@ -614,6 +674,7 @@ export class PetController {
       });
       if (req !== this.request) return;
       this.request = null;
+      this.tracker.record("task");
       speaker?.flush();
       this.lastAnswer = result.text;
       this.history = [
@@ -729,6 +790,7 @@ export class PetController {
   }
 
   private onError(error: unknown): void {
+    this.tracker.record("error");
     log("error", `AI task failed (${error instanceof Error ? error.message : "unknown"})`);
     this.fsm.transition("ERROR");
     clearTimeout(this.errorTimer);
@@ -768,7 +830,7 @@ export class PetController {
     const layout = expandedLayout(this.petPos, this.size, bubbleHeight, screen.visibleFrame, prefer);
     this.expanded = layout;
     this.root.dataset.mode = "expanded";
-    this.pet.place(layout.pet.x, layout.pet.y, this.size);
+    this.placeCharacter(layout.pet.x, layout.pet.y);
     this.bubble.layout(layout.bubble, layout.side, layout.tailX, layout.maxBubbleHeight);
     await native.setClickThrough(false, null);
     await native.setPetFrame(layout.frame);
@@ -778,9 +840,9 @@ export class PetController {
     this.expanded = null;
     this.root.dataset.mode = "compact";
     this.bubble.hide();
-    this.pet.place(0, 0, this.size);
+    this.placeCharacter(0, 0);
     await native.setPetFrame(compactFrame(this.petPos, this.size));
-    await native.setClickThrough(true, petHitRect(this.size));
+    await native.setClickThrough(true, petHitRect(this.size, this.characterKind));
   }
 
   /** Grow/shrink the window as streamed content changes the bubble's height. */
@@ -855,8 +917,8 @@ export class PetController {
   private applyAppearance(): void {
     const s = this.settings.get();
     this.size = petBoxSize(s.petSize);
-    this.pet.setScale(s.petSize);
-    this.pet.setSpeed(s.animationSpeed);
+    this.character.setScale(this.size / ART_SIZE);
+    this.character.setSpeed(s.animationSpeed);
   }
 
   // ------------------------------------------------------------------ roaming & motion
@@ -902,6 +964,7 @@ export class PetController {
 
   private touch(): void {
     this.lastInteraction = Date.now();
+    this.tracker.record("interaction");
     if (this.fsm.is("SLEEPING")) this.wake();
   }
 
@@ -911,6 +974,121 @@ export class PetController {
     this.stopRoaming();
     this.fsm.transition("SLEEPING");
     this.napTimer = setTimeout(() => this.wake(), NAP_MIN_MS + Math.random() * (NAP_MAX_MS - NAP_MIN_MS));
+    void this.moodTick(); // sleepy: she may slip into something cosy
+  }
+
+  // ------------------------------------------------------------------ character renderer
+
+  private placeCharacter(x: number, y: number): void {
+    this.placement = { x, y };
+    this.character.place(x, y, this.size);
+  }
+
+  /** Build the renderer chosen in Settings (3D model, clips/images or built-in). */
+  private async createCharacter(
+    kind: CharacterKind,
+    outfit: Outfit,
+    failed: (message: string) => void,
+  ): Promise<CharacterView> {
+    if (kind === "vrm") {
+      const { VrmPet } = await import("../components/VrmPet");
+      return new VrmPet(
+        this.root,
+        outfit,
+        (name) => native.readCharacterFile("vrm", name),
+        (o) => this.settings.get().outfitModels[o.id] || this.settings.get().vrmModel,
+        failed,
+      );
+    }
+    if (kind === "sprites") {
+      const list = await native.listCharacters();
+      return new SpritePet(this.root, outfit, list.sprites, (name) => native.readCharacterFile("sprite", name), failed);
+    }
+    return new Pet(this.root, outfit);
+  }
+
+  private async swapCharacter(kind: CharacterKind = this.settings.get().character): Promise<void> {
+    while (this.swapping) await this.swapping;
+    let release!: () => void;
+    this.swapping = new Promise((resolve) => (release = resolve));
+    let next: CharacterView | null = null;
+    // A renderer can fail while it is still being built; report that once it is on screen.
+    let failure: string | null = null;
+    try {
+      const old = this.character;
+      next = await this.createCharacter(kind, old.currentOutfit, (message) => {
+        if (next && this.character === next) void this.characterFailed(message);
+        else failure ??= message;
+      });
+      this.root.insertBefore(next.el, this.bubble.el);
+      this.character = next;
+      this.characterKind = kind;
+      this.applyAppearance();
+      next.setMood(this.mood);
+      next.place(this.placement.x, this.placement.y, this.size);
+      this.bindPointer(next.el);
+      this.anim.setView(next);
+      old.dispose();
+      if (!this.expanded && !this.fsm.is("OFF")) {
+        await native.setClickThrough(true, petHitRect(this.size, kind)).catch(() => undefined);
+      }
+      log("info", `Character renderer: ${kind}`);
+    } catch (e) {
+      failure ??= e instanceof Error ? e.message : String(e);
+    } finally {
+      this.swapping = null;
+      release();
+    }
+    if (failure && kind !== "vector") await this.characterFailed(failure);
+  }
+
+  /** Fall back to the built-in look and tell the user why. */
+  private async characterFailed(message: string): Promise<void> {
+    log("warn", `Character failed to load (${this.characterKind})`);
+    if (this.characterKind !== "vector") await this.swapCharacter("vector");
+    const title = "Couldn't load my look";
+    const text = `${message} I'm using my built-in look for now.`;
+    // Failures while the pet is hidden (e.g. at launch) are shown once she appears.
+    if (this.fsm.is("OFF")) this.pendingNotice = { title, text };
+    else await this.showNotice(title, text, true);
+  }
+
+  // ------------------------------------------------------------------ mood & wardrobe
+
+  private initialOutfit(s: Settings): Outfit {
+    if (s.outfit !== "auto") return outfitById(s.outfit);
+    if (s.currentOutfit) return outfitById(s.currentOutfit);
+    return outfitById(pickOutfit(this.mood, null));
+  }
+
+  private scheduleMood(delay = MOOD_MIN_MS + Math.random() * (MOOD_MAX_MS - MOOD_MIN_MS)): void {
+    clearTimeout(this.moodTimer);
+    this.moodTimer = setTimeout(() => void this.moodTick(), delay);
+  }
+
+  /** Re-read her mood; in "let Lucy decide" mode she may change clothes to match it. */
+  private async moodTick(): Promise<void> {
+    this.mood = decideMood(this.tracker.signals(this.fsm.is("SLEEPING")));
+    this.character.setMood(this.mood);
+    if (this.settings.get().outfit === "auto" && !this.fsm.is("OFF")) {
+      if (this.expanded || this.drag || !this.fsm.is("IDLE", "SLEEPING")) {
+        this.scheduleMood(60_000); // busy — try again in a minute
+        return;
+      }
+      const current = this.character.currentOutfit.id;
+      const suits = MOOD_OUTFITS[this.mood].some(([id]) => id === current);
+      if (!suits || Math.random() < 0.35) await this.changeOutfit(pickOutfit(this.mood, current));
+    }
+    this.scheduleMood();
+  }
+
+  private async changeOutfit(id: OutfitId): Promise<void> {
+    const outfit = outfitById(id);
+    if (outfit.id === this.character.currentOutfit.id) return;
+    if (this.fsm.is("OFF")) this.character.setOutfit(outfit);
+    else await this.character.changeOutfit(outfit);
+    log("info", `Outfit changed (${outfit.id}, mood ${this.mood})`);
+    await this.settings.update({ currentOutfit: outfit.id }).catch(() => undefined);
   }
 
   private wake(): void {
@@ -939,8 +1117,7 @@ export class PetController {
 
   // ------------------------------------------------------------------ pointer: click, double-click, drag, menu
 
-  private bindPointer(): void {
-    const el = this.pet.el;
+  private bindPointer(el: HTMLElement): void {
     el.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
@@ -1049,6 +1226,22 @@ export class PetController {
         { id: "settings", text: "Settings…", action: () => void native.openSettingsWindow() },
         { id: "pause", text: "Pause roaming", enabled: s.roaming, action: toggle({ roaming: false }) },
         { id: "resume", text: "Resume roaming", enabled: !s.roaming, action: toggle({ roaming: true }) },
+        {
+          text: "Outfit",
+          items: [
+            { id: "outfit-auto", text: "Let Lucy decide (mood)", checked: s.outfit === "auto", action: toggle({ outfit: "auto" }) },
+            { item: "Separator" },
+            ...OUTFIT_IDS.map((id) => {
+              const o = outfitById(id);
+              return {
+                id: `outfit-${id}`,
+                text: `${o.emoji}  ${o.name}`,
+                checked: this.character.currentOutfit.id === id,
+                action: toggle({ outfit: id }),
+              };
+            }),
+          ],
+        },
         { id: "mute", text: "Mute", checked: !s.speak, action: toggle({ speak: !s.speak }) },
         { id: "enabled", text: "Pet enabled", checked: s.petEnabled, action: toggle({ petEnabled: !s.petEnabled }) },
         { id: "login", text: "Launch at startup", checked: s.launchAtLogin, action: toggle({ launchAtLogin: !s.launchAtLogin }) },
@@ -1096,6 +1289,15 @@ export class PetController {
       else this.stopRoaming();
     }
     if (prev.speak && !next.speak) this.tts.stop();
+    const modelsChanged =
+      next.vrmModel !== prev.vrmModel || JSON.stringify(next.outfitModels) !== JSON.stringify(prev.outfitModels);
+    if (next.character !== prev.character || (next.character === "vrm" && modelsChanged)) {
+      void this.swapCharacter();
+    }
+    if (next.outfit !== prev.outfit) {
+      if (next.outfit === "auto") void this.moodTick();
+      else void this.changeOutfit(next.outfit as OutfitId);
+    }
     if (prev.firstRunCompleted && !next.firstRunCompleted && !this.fsm.is("OFF")) {
       this.cancelRequest();
       this.stopRoaming();

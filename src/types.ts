@@ -49,6 +49,15 @@ export interface Settings {
 
   petSize: number;
   animationSpeed: number;
+  /** "auto" (Lucy picks by mood) or an outfit id. */
+  outfit: string;
+  /** What she's wearing right now (remembered across restarts). */
+  currentOutfit: string;
+  /** "vector" (built-in), "vrm" (3D model) or "sprites" (animated images / clips). */
+  character: "vector" | "vrm" | "sprites";
+  vrmModel: string;
+  /** Optional per-outfit 3D models: outfit id → model file. */
+  outfitModels: Record<string, string>;
 
   firstRunCompleted: boolean;
   accessibilityPrompted: boolean;

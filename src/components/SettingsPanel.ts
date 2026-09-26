@@ -1,5 +1,7 @@
 import { TRANSLATE_LANGUAGES } from "../ai/language";
-import { native } from "../services/native";
+import { OUTFIT_IDS, OUTFITS, voiceFor } from "../pet/Wardrobe";
+import { SPRITE_STATES, type SpriteState } from "./CharacterView";
+import { native, on, type CharacterList } from "../services/native";
 import type { SettingsService } from "../services/SettingsService";
 import { TTSService } from "../services/TTSService";
 import type { AppStatus, ProviderId, Settings } from "../types";
@@ -63,6 +65,18 @@ export const PRESETS: Record<string, Preset> = {
   },
 };
 
+const SPRITE_LABELS: Record<SpriteState, string> = {
+  idle: "Idle (required)",
+  walk: "Walking",
+  talk: "Talking",
+  think: "Thinking",
+  listen: "Listening",
+  sleep: "Sleeping",
+  error: "Confused",
+  happy: "Happy",
+  wave: "Waving hello",
+};
+
 type Props = Record<string, string | number | boolean | undefined>;
 
 function h<K extends keyof HTMLElementTagNameMap>(
@@ -90,6 +104,7 @@ export class SettingsPanel {
   private accessState!: HTMLElement;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private pending: Partial<Settings> = {};
+  private characters: CharacterList = { vrm: [], sprites: {} };
 
   constructor(
     private readonly root: HTMLElement,
@@ -98,8 +113,10 @@ export class SettingsPanel {
 
   async mount(): Promise<void> {
     this.status = await native.getAppStatus().catch(() => null);
+    await this.loadCharacters();
     this.render();
     this.settings.onChange(() => this.render());
+    void on("characters-changed", () => void this.loadCharacters().then(() => this.render()));
     window.addEventListener("focus", () => void this.refreshStatus());
   }
 
@@ -122,6 +139,10 @@ export class SettingsPanel {
     };
     if (immediate) void flush();
     else this.saveTimer = setTimeout(() => void flush(), 500);
+  }
+
+  private async loadCharacters(): Promise<void> {
+    this.characters = await native.listCharacters().catch(() => this.characters);
   }
 
   private flash(message: string, kind: "ok" | "warn" = "ok"): void {
@@ -168,6 +189,7 @@ export class SettingsPanel {
       this.ai(),
       this.voice(),
       this.appearance(),
+      this.characterSection(),
       this.privacy(),
       this.statusLine,
     );
@@ -365,22 +387,27 @@ export class SettingsPanel {
   }
 
   private voice(): HTMLElement {
-    const voiceSel = h("select", {}, h("option", { value: "", text: "System default" }));
+    const voiceSel = h("select", {}, h("option", { value: "", text: "Lucy (calm, automatic)" }));
     void TTSService.voices().then((voices) => {
       for (const v of voices) {
         voiceSel.append(h("option", { value: v.name, text: `${v.name} (${v.lang})`, selected: v.name === this.s.voice }));
       }
     });
     voiceSel.addEventListener("change", () => this.save({ voice: voiceSel.value }));
-    const tts = new TTSService(() => ({ voice: this.s.voice, rate: this.s.speechRate }));
+    const delivery = voiceFor("confident");
+    const tts = new TTSService(() => ({
+      voice: this.s.voice,
+      rate: this.s.speechRate * delivery.rate,
+      pitch: delivery.pitch,
+    }));
     const test = h("button", { type: "button", class: "btn", text: "Test voice" });
     test.addEventListener("click", () => {
       tts.stop();
-      tts.speak("Hi! I'm your desktop pet. Press Option P anytime.");
+      tts.speak("Hey, choom. It's Lucy. Press Option P whenever you need me.");
     });
     return this.section(
       "Voice",
-      this.toggle("speak", "Speak responses", "Uses the built-in macOS voices — offline and free."),
+      this.toggle("speak", "Speak responses", "Built-in macOS voices — offline and free. Her pace and pitch follow her mood."),
       this.row("Voice", h("span", { class: "inline" }, voiceSel, test)),
       this.range("speechRate", "Speech speed", 0.5, 2, 0.1, (v) => `${v.toFixed(1)}×`),
       this.toggle("voiceInput", "Voice input", "Coming in a future version.", true),
@@ -388,11 +415,167 @@ export class SettingsPanel {
   }
 
   private appearance(): HTMLElement {
+    const outfits: [string, string][] = [
+      ["auto", "Let Lucy choose (by mood)"],
+      ...OUTFIT_IDS.map((id): [string, string] => [id, `${OUTFITS[id].emoji}  ${OUTFITS[id].name}`]),
+    ];
     return this.section(
       "Appearance",
-      this.range("petSize", "Pet size", 0.7, 1.5, 0.05, (v) => `${Math.round(v * 100)}%`),
+      this.select("outfit", "Wardrobe", outfits, "In auto mode she changes clothes and hair when her mood shifts."),
+      this.range("petSize", "Pet size", 0.6, 3, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.range("animationSpeed", "Animation speed", 0.5, 2, 0.1, (v) => `${v.toFixed(1)}×`),
     );
+  }
+
+  // ---------------------------------------------------------------- character
+
+  private characterSection(): HTMLElement {
+    const kind = this.s.character;
+    const rows: HTMLElement[] = [
+      this.select(
+        "character",
+        "Look",
+        [
+          ["vector", "Built-in Lucy (drawn)"],
+          ["vrm", "3D model (VRM)"],
+          ["sprites", "Anime clips / images"],
+        ],
+        "Bring your own Lucy: a 3D model or animated images. Files stay on this Mac.",
+      ),
+    ];
+    if (kind === "vrm") rows.push(...this.vrmRows());
+    if (kind === "sprites") rows.push(...this.spriteRows());
+    return this.section("Character", ...rows);
+  }
+
+  /** A button that opens a file picker and hands the chosen file to `onFile`. */
+  private fileButton(text: string, accept: string, onFile: (file: File) => Promise<void>): HTMLElement {
+    const input = h("input", { type: "file", accept, hidden: true });
+    const button = h("button", { type: "button", class: "btn", text });
+    button.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) return;
+      button.disabled = true;
+      this.flash(`Importing ${file.name}…`);
+      try {
+        await onFile(file);
+      } catch (e) {
+        this.flash(String(e), "warn");
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return h("span", {}, button, input);
+  }
+
+  private vrmRows(): HTMLElement[] {
+    const models = this.characters.vrm;
+    const importBtn = this.fileButton("Import .vrm…", ".vrm", async (file) => {
+      const stored = await native.importCharacterFile("vrm", file.name, await file.arrayBuffer());
+      await this.loadCharacters();
+      if (!this.s.vrmModel) this.save({ vrmModel: stored });
+      else this.render();
+      this.flash(`Imported ${stored}.`);
+    });
+
+    const rows: HTMLElement[] = [
+      h(
+        "p",
+        { class: "help" },
+        "Make a free anime-style model in VRoid Studio (vroid.com/en/studio) — pink-white bob, lavender tips, " +
+          "white cropped jacket, black bodysuit — then File → Export as VRM. Any VRM 0.x or 1.0 model works.",
+      ),
+      h("div", { class: "row row--actions" }, importBtn),
+    ];
+    if (!models.length) {
+      rows.push(h("p", { class: "warn", text: "No models yet — import a .vrm file to use this look." }));
+      return rows;
+    }
+
+    const options: [string, string][] = models.map((m) => [m, m]);
+    rows.push(this.select("vrmModel", "Model", options, "What she wears unless an outfit has its own model."));
+
+    const list = h("ul", { class: "files" });
+    for (const name of models) {
+      const remove = h("button", { type: "button", class: "btn btn--small", text: "Remove" });
+      remove.addEventListener("click", async () => {
+        try {
+          await native.deleteCharacterFile("vrm", name);
+          await this.loadCharacters();
+          const outfitModels = Object.fromEntries(Object.entries(this.s.outfitModels).filter(([, m]) => m !== name));
+          const vrmModel = this.s.vrmModel === name ? (this.characters.vrm[0] ?? "") : this.s.vrmModel;
+          this.save({ vrmModel, outfitModels });
+          this.flash(`Removed ${name}.`);
+        } catch (e) {
+          this.flash(String(e), "warn");
+        }
+      });
+      list.append(h("li", {}, h("span", { text: name }), remove));
+    }
+    rows.push(list);
+
+    if (models.length > 1) {
+      const table = h("div", { class: "outfit-models" });
+      for (const id of OUTFIT_IDS) {
+        const sel = h("select", {}, h("option", { value: "", text: "Same as default" }));
+        for (const m of models) sel.append(h("option", { value: m, text: m, selected: this.s.outfitModels[id] === m }));
+        sel.addEventListener("change", () => {
+          const outfitModels = { ...this.s.outfitModels };
+          if (sel.value) outfitModels[id] = sel.value;
+          else delete outfitModels[id];
+          this.save({ outfitModels });
+        });
+        table.append(this.row(`${OUTFITS[id].emoji}  ${OUTFITS[id].name}`, sel));
+      }
+      rows.push(
+        h(
+          "details",
+          { class: "more" },
+          h("summary", { text: "Models per outfit" }),
+          h("p", { class: "help", text: "Give each outfit its own model and she swaps models when her mood changes her clothes." }),
+          table,
+        ),
+      );
+    }
+    return rows;
+  }
+
+  private spriteRows(): HTMLElement[] {
+    const files = this.characters.sprites;
+    const rows: HTMLElement[] = [
+      h(
+        "p",
+        { class: "help" },
+        "One animated image or short clip per state: animated WebP, GIF or PNG, or a WebM/MP4/MOV video " +
+          "(transparent WebM/MOV clips float right on your desktop). To cut a character out of an anime clip, " +
+          "run scripts/make_sprite.py from the project (see the README). Only Idle is required.",
+      ),
+    ];
+    if (!files.idle) rows.push(h("p", { class: "warn", text: "Add an Idle image or clip to use this look." }));
+    const accept = ".webp,.gif,.png,.apng,.webm,.mp4,.m4v,.mov";
+    for (const state of SPRITE_STATES) {
+      const current = files[state];
+      const choose = this.fileButton(current ? "Replace…" : "Choose…", accept, async (file) => {
+        await native.importCharacterFile("sprite", file.name, await file.arrayBuffer(), state);
+        await this.loadCharacters();
+        this.render();
+        this.flash(`${SPRITE_LABELS[state]} updated.`);
+      });
+      const controls = h("span", { class: "inline" }, h("small", { class: "muted", text: current ?? "—" }), choose);
+      if (current) {
+        const remove = h("button", { type: "button", class: "btn btn--small", text: "Remove" });
+        remove.addEventListener("click", async () => {
+          await native.deleteCharacterFile("sprite", current).catch((e) => this.flash(String(e), "warn"));
+          await this.loadCharacters();
+          this.render();
+        });
+        controls.append(remove);
+      }
+      rows.push(h("div", { class: "row" }, h("span", { class: "row__label", text: SPRITE_LABELS[state] }), controls));
+    }
+    return rows;
   }
 
   private privacy(): HTMLElement {

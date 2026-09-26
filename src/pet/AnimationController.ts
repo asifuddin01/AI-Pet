@@ -1,7 +1,17 @@
 import type { PetState } from "./PetState";
 
 export type Animation = "idle" | "walk" | "thinking" | "talking" | "listening" | "error" | "sleep";
-export type Gesture = "blink" | "look-left" | "look-right" | "hop" | "wave" | "happy" | "snore";
+export type Gesture =
+  | "blink"
+  | "look-left"
+  | "look-right"
+  | "hop"
+  | "wave"
+  | "happy"
+  | "snore"
+  | "change"
+  | "hair-touch"
+  | "glance";
 
 /** Guide §40: state → base animation. OFF renders nothing. */
 export const STATE_ANIMATION: Record<PetState, Animation | null> = {
@@ -24,6 +34,9 @@ export const GESTURE_MS: Record<Gesture, number> = {
   wave: 1300,
   happy: 1400,
   snore: 3900,
+  change: 900,
+  "hair-touch": 2200,
+  glance: 2000,
 };
 
 export interface AnimatedView {
@@ -52,7 +65,7 @@ export class AnimationController {
   private state: PetState = "OFF";
 
   constructor(
-    private readonly view: AnimatedView,
+    private view: AnimatedView,
     private readonly random: () => number = Math.random,
     private readonly timers: Timers = defaultTimers,
   ) {}
@@ -72,6 +85,13 @@ export class AnimationController {
     }
   }
 
+  /** Switch to another character renderer, keeping the current state. */
+  setView(view: AnimatedView): void {
+    this.clear();
+    this.view = view;
+    this.apply(this.state);
+  }
+
   gesture(gesture: Gesture): void {
     this.view.playGesture(gesture, GESTURE_MS[gesture]);
   }
@@ -86,9 +106,11 @@ export class AnimationController {
     const r = this.random();
     if (this.state === "SLEEPING") return "snore";
     if (this.state === "WALKING") return "blink";
-    if (r < 0.55) return "blink";
-    if (r < 0.7) return "look-left";
-    if (r < 0.85) return "look-right";
+    if (r < 0.5) return "blink";
+    if (r < 0.6) return "look-left";
+    if (r < 0.7) return "look-right";
+    if (r < 0.8) return "glance";
+    if (r < 0.88) return "hair-touch";
     if (r < 0.95 || this.state !== "IDLE") return "hop";
     return "wave";
   }

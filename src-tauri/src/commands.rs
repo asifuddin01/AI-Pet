@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeBody, Request, Response};
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use crate::ai::{self, AiRequest, StreamEvent};
@@ -283,6 +283,40 @@ pub async fn ai_test_connection(state: State<'_, AppState>) -> Result<String, St
             })
         }
     }
+}
+
+// ---------------------------------------------------------------- character assets
+
+fn header<'a>(request: &'a Request<'_>, name: &str) -> Option<&'a str> {
+    request.headers().get(name).and_then(|v| v.to_str().ok())
+}
+
+/// Raw-bytes upload of a VRM model or a sprite/clip (headers: x-kind, x-name, x-state).
+#[tauri::command]
+pub async fn import_character_file(app: AppHandle, request: Request<'_>) -> Result<String, String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected file bytes".into());
+    };
+    let kind = crate::characters::Kind::parse(header(&request, "x-kind").unwrap_or_default())?;
+    let name = header(&request, "x-name").ok_or("Missing file name")?;
+    crate::characters::import(&app, kind, name, header(&request, "x-state"), bytes)
+}
+
+#[tauri::command]
+pub async fn list_characters(app: AppHandle) -> Result<crate::characters::CharacterList, String> {
+    crate::characters::list(&app)
+}
+
+#[tauri::command]
+pub async fn read_character_file(app: AppHandle, kind: String, name: String) -> Result<Response, String> {
+    let kind = crate::characters::Kind::parse(&kind)?;
+    crate::characters::read(&app, kind, &name).map(Response::new)
+}
+
+#[tauri::command]
+pub async fn delete_character_file(app: AppHandle, kind: String, name: String) -> Result<(), String> {
+    let kind = crate::characters::Kind::parse(&kind)?;
+    crate::characters::delete(&app, kind, &name)
 }
 
 // ---------------------------------------------------------------- voice

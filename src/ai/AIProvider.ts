@@ -49,32 +49,32 @@ export function isCancellation(error: unknown): boolean {
   return error instanceof AIError && error.kind === "cancelled";
 }
 
-/** What the pet says. Technical detail goes to the log, never the bubble. */
+/** What Lucy says. Technical detail goes to the log, never the bubble. */
 export function friendlyError(error: unknown): string {
   const kind = error instanceof AIError ? error.kind : "unknown";
   switch (kind) {
     case "not_configured":
-      return "Connect an AI provider to use this feature.";
+      return "Connect an AI provider first, choom — then I can do that.";
     case "ai_disabled":
-      return "AI requests are turned off in Settings.";
+      return "AI requests are switched off in Settings.";
     case "invalid_url":
-      return "The AI endpoint in Settings doesn't look right.";
+      return "That AI endpoint in Settings looks off.";
     case "network":
-      return "Hmm... I couldn't reach my AI brain right now.";
+      return "Can't reach my AI brain right now. The Net's being difficult.";
     case "timeout":
-      return "My AI brain is taking too long. Try again?";
+      return "The Net's crawling. Give it another shot?";
     case "auth":
-      return "My API key didn't work. Check it in Settings.";
+      return "My API key got rejected. Check it in Settings.";
     case "rate_limit":
-      return "I'm being rate-limited. Give me a moment!";
+      return "Rate-limited. Give me a moment.";
     case "invalid_model":
-      return "I couldn't find that AI model. Check Settings.";
+      return "Can't find that AI model. Check Settings.";
     case "unavailable":
-      return "My AI brain is busy right now. Try again soon.";
+      return "The AI's jammed up right now. Try again soon.";
     case "refused":
-      return "I can't help with that one.";
+      return "Not touching that one.";
     default:
-      return "Oops, something went wrong. Try again?";
+      return "Something glitched. Try again?";
   }
 }
 

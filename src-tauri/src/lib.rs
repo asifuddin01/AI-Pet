@@ -7,6 +7,7 @@
 mod accessibility;
 mod ai;
 mod autostart;
+mod characters;
 mod clipboard;
 mod commands;
 mod geometry;
@@ -147,6 +148,10 @@ pub fn run() {
             commands::ai_stream,
             commands::ai_cancel,
             commands::ai_test_connection,
+            commands::import_character_file,
+            commands::list_characters,
+            commands::read_character_file,
+            commands::delete_character_file,
             commands::tts_speak,
             commands::tts_stop,
             commands::open_settings_window,

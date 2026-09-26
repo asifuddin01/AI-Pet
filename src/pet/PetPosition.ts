@@ -5,7 +5,7 @@
 import type { Point, Rect, ScreenInfo } from "../types";
 
 /** Pet box edge at size 1.0 (the compact window is exactly this square). */
-export const PET_BASE = 120;
+export const PET_BASE = 140;
 export const BUBBLE_WIDTH = 300;
 export const BUBBLE_MIN_HEIGHT = 72;
 export const BUBBLE_MAX_HEIGHT = 380;
@@ -23,9 +23,10 @@ export function petBoxSize(scale: number): number {
   return Math.round(PET_BASE * scale);
 }
 
-/** The pet's body inside its box (clickable when idle; the rest is click-through). */
-export function petHitRect(size: number): Rect {
-  return { x: size * 0.16, y: size * 0.04, width: size * 0.68, height: size * 0.9 };
+/** Her figure inside the box (clickable when idle; the rest is click-through). */
+export function petHitRect(size: number, kind: "vector" | "vrm" | "sprites" = "vector"): Rect {
+  if (kind === "sprites") return { x: size * 0.12, y: size * 0.04, width: size * 0.76, height: size * 0.94 };
+  return { x: size * 0.33, y: size * 0.02, width: size * 0.34, height: size * 0.92 };
 }
 
 export const right = (r: Rect) => r.x + r.width;

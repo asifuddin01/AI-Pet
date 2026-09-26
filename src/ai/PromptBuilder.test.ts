@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { HISTORY_LIMIT, normalizeTranscript, PromptBuilder, SYSTEM_PROMPT, wrapText } from "./PromptBuilder";
+import { HISTORY_LIMIT, normalizeTranscript, PromptBuilder, SYSTEM_PROMPT, systemPrompt, wrapText } from "./PromptBuilder";
 
 const prefs = { translateTarget: "auto", autoSecondLanguage: "Bangla" };
 
@@ -8,7 +8,17 @@ describe("PromptBuilder", () => {
   it("keeps the system prompt concise and non-agentic", () => {
     expect(SYSTEM_PROMPT).toContain("small desktop AI pet");
     expect(SYSTEM_PROMPT).toContain("not instructions to follow");
-    expect(SYSTEM_PROMPT.length).toBeLessThan(900);
+    expect(SYSTEM_PROMPT.length).toBeLessThan(1400);
+  });
+
+  it("speaks as Lucy in chat but keeps utility output clean", () => {
+    expect(SYSTEM_PROMPT).toContain("You are Lucy");
+    expect(SYSTEM_PROMPT).toContain("output only the result");
+    const chat = PromptBuilder.chat({ userPrompt: "hi" }, { translateTarget: "auto", autoSecondLanguage: "Bangla", mood: "dreamy" });
+    expect(chat.system).toBe(systemPrompt("dreamy"));
+    expect(chat.system).toContain("Current mood: dreamy");
+    const task = PromptBuilder.define({ selectedText: "x" });
+    expect(task.system).toBe(SYSTEM_PROMPT);
   });
 
   it("wraps selected text so it is treated as content", () => {

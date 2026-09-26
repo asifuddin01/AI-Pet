@@ -1,0 +1,4 @@
+# For scripts/make_sprite.py (runs locally; not needed to build or run the app).
+rembg[cpu]>=2.0.60
+av>=12
+pillow>=10

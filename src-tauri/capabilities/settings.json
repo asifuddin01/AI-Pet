@@ -14,6 +14,9 @@
     "allow-check-accessibility-permission",
     "allow-request-accessibility-permission",
     "allow-open-accessibility-settings",
+    "allow-import-character-file",
+    "allow-list-characters",
+    "allow-delete-character-file",
     "allow-tts-speak",
     "allow-tts-stop",
     "allow-app-log"

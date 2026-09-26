@@ -19,6 +19,9 @@ export default defineConfig({
     // macOS 13+ ships Safari 16's WebKit.
     target: "safari16",
     sourcemap: false,
+    // The 3D renderer (three.js) is its own lazily loaded chunk, fetched only when a
+    // VRM character is chosen; it is loaded from disk, so its size is fine.
+    chunkSizeWarningLimit: 900,
     rolldownOptions: {
       input: {
         pet: page("./index.html"),

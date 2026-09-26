@@ -80,6 +80,16 @@ pub struct Settings {
     // Appearance
     pub pet_size: f32,
     pub animation_speed: f32,
+    /// "auto" (the pet picks outfits by mood) or a fixed outfit id.
+    pub outfit: String,
+    /// Outfit currently worn, remembered across restarts.
+    pub current_outfit: String,
+    /// "vector" (built-in), "vrm" (3D model) or "sprites" (animated images/clips).
+    pub character: String,
+    /// Default VRM model file (in the app's character folder).
+    pub vrm_model: String,
+    /// Optional per-outfit VRM models (outfit id → model file).
+    pub outfit_models: std::collections::BTreeMap<String, String>,
 
     // Remembered state
     pub first_run_completed: bool,
@@ -111,6 +121,11 @@ impl Default for Settings {
             voice_input: false,
             pet_size: 1.0,
             animation_speed: 1.0,
+            outfit: "auto".into(),
+            current_outfit: String::new(),
+            character: "vector".into(),
+            vrm_model: String::new(),
+            outfit_models: Default::default(),
             first_run_completed: false,
             accessibility_prompted: false,
             last_position: None,
@@ -151,8 +166,23 @@ impl Settings {
             self.auto_second_language = defaults.auto_second_language;
         }
         self.voice = clean(&self.voice, 200);
+        self.outfit = clean(&self.outfit, 32);
+        if self.outfit.is_empty() {
+            self.outfit = "auto".into();
+        }
+        self.current_outfit = clean(&self.current_outfit, 32);
+        if !matches!(self.character.as_str(), "vector" | "vrm" | "sprites") {
+            self.character = "vector".into();
+        }
+        self.vrm_model = clean(&self.vrm_model, 80);
+        self.outfit_models = std::mem::take(&mut self.outfit_models)
+            .into_iter()
+            .take(32)
+            .map(|(k, v)| (clean(&k, 32), clean(&v, 80)))
+            .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+            .collect();
         self.speech_rate = finite_or(self.speech_rate, 1.0).clamp(0.5, 2.0);
-        self.pet_size = finite_or(self.pet_size, 1.0).clamp(0.6, 1.6);
+        self.pet_size = finite_or(self.pet_size, 1.0).clamp(0.6, 3.0);
         self.animation_speed = finite_or(self.animation_speed, 1.0).clamp(0.5, 2.0);
         if let Some(p) = self.last_position {
             if !p.x.is_finite() || !p.y.is_finite() {
@@ -291,6 +321,7 @@ mod tests {
         assert!(d.pet_enabled);
         assert!(!d.launch_at_login, "launch at login must never default to on");
         assert_eq!(d.hotkey, "Alt+KeyP");
+        assert_eq!(d.outfit, "auto", "Lucy picks her own outfits by default");
     }
 
     #[test]

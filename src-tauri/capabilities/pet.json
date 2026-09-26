@@ -28,6 +28,8 @@
     "allow-write-clipboard",
     "allow-ai-stream",
     "allow-ai-cancel",
+    "allow-list-characters",
+    "allow-read-character-file",
     "allow-tts-speak",
     "allow-tts-stop",
     "allow-open-settings-window",

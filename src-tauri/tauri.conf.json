@@ -17,8 +17,8 @@
         "label": "pet",
         "title": "AI Pet",
         "url": "index.html",
-        "width": 120,
-        "height": 120,
+        "width": 140,
+        "height": 140,
         "transparent": true,
         "decorations": false,
         "shadow": false,
@@ -34,7 +34,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src ipc: http://ipc.localhost blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
       "freezePrototype": true
     }
   },

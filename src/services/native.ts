@@ -7,6 +7,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { AppStatus, Point, ProviderId, Rect, SaveResult, ScreenInfo, Settings } from "../types";
 
+export interface CharacterList {
+  vrm: string[];
+  /** pet state → stored file name */
+  sprites: Record<string, string>;
+}
+
 export interface WireMessage {
   role: "user" | "assistant";
   content: string;
@@ -55,6 +61,22 @@ export const native = {
     invoke<void>("ai_stream", { requestId, request, onEvent }),
   aiCancel: (requestId: number) => invoke<void>("ai_cancel", { requestId }),
   aiTestConnection: () => invoke<string>("ai_test_connection"),
+
+  listCharacters: () => invoke<CharacterList>("list_characters"),
+  readCharacterFile: (kind: "vrm" | "sprite", name: string) =>
+    invoke<ArrayBuffer>("read_character_file", { kind, name }),
+  deleteCharacterFile: (kind: "vrm" | "sprite", name: string) =>
+    invoke<void>("delete_character_file", { kind, name }),
+  /** Upload a file's bytes (raw IPC body; metadata in headers). */
+  importCharacterFile: (kind: "vrm" | "sprite", name: string, bytes: ArrayBuffer, state?: string) =>
+    invoke<string>("import_character_file", new Uint8Array(bytes), {
+      headers: {
+        "x-kind": kind,
+        // Header values must be ASCII; Rust sanitizes the name again.
+        "x-name": name.replace(/[^A-Za-z0-9 ._-]/g, "_"),
+        ...(state ? { "x-state": state } : {}),
+      },
+    }),
 
   ttsSpeak: (text: string, voice: string | null, rate: number) =>
     invoke<boolean>("tts_speak", { text, voice, rate }),

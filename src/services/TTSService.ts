@@ -1,8 +1,41 @@
 import { native, log } from "./native";
 
 export interface VoicePrefs {
+  /** A system voice name, or "" for Lucy's automatic pick. */
   voice: string;
   rate: number;
+  pitch: number;
+}
+
+/**
+ * Lucy's voice: a calm, clear female system voice. Premium/Enhanced variants are
+ * preferred when installed (System Settings → Accessibility → Spoken Content).
+ */
+export const LUCY_VOICES = ["Ava", "Zoe", "Allison", "Samantha", "Susan", "Karen", "Moira", "Tessa"];
+
+/** Pick the voice to use: the user's choice, else Lucy's preferred voice for the language. */
+export function chooseVoice(
+  voices: Pick<SpeechSynthesisVoice, "name" | "lang">[],
+  preferred: string,
+  lang?: string,
+): Pick<SpeechSynthesisVoice, "name" | "lang"> | undefined {
+  const prefix = lang?.split("-")[0];
+  const fits = (v: Pick<SpeechSynthesisVoice, "lang">) => !prefix || v.lang.toLowerCase().startsWith(prefix.toLowerCase());
+  const chosen = voices.find((v) => v.name === preferred);
+  if (chosen && fits(chosen)) return chosen;
+  if (!prefix || prefix === "en") {
+    const quality = (name: string) => (/premium/i.test(name) ? 0 : /enhanced/i.test(name) ? 1 : 2);
+    const lucy = voices
+      .filter((v) => v.lang.toLowerCase().startsWith("en") && LUCY_VOICES.some((n) => v.name.startsWith(n)))
+      .sort(
+        (a, b) =>
+          quality(a.name) - quality(b.name) ||
+          LUCY_VOICES.findIndex((n) => a.name.startsWith(n)) - LUCY_VOICES.findIndex((n) => b.name.startsWith(n)),
+      );
+    if (lucy.length) return lucy[0];
+  }
+  if (!lang) return undefined;
+  return voices.find((v) => v.lang === lang) ?? voices.find((v) => fits(v));
 }
 
 type Engine = "web" | "native";
@@ -87,19 +120,14 @@ export class TTSService {
 
   private speakWeb(text: string, lang?: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const { voice, rate } = this.prefs();
+      const { voice, rate, pitch } = this.prefs();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = rate;
+      utterance.rate = Math.min(2, Math.max(0.5, rate));
+      utterance.pitch = Math.min(2, Math.max(0, pitch));
       const voices = speechSynthesis.getVoices();
-      const chosen = voices.find((v) => v.name === voice);
-      const langPrefix = lang?.split("-")[0];
-      if (chosen && (!langPrefix || chosen.lang.startsWith(langPrefix))) {
-        utterance.voice = chosen;
-      } else if (lang) {
-        utterance.lang = lang;
-        const match = voices.find((v) => v.lang === lang) ?? voices.find((v) => langPrefix && v.lang.startsWith(langPrefix));
-        if (match) utterance.voice = match;
-      }
+      if (lang) utterance.lang = lang;
+      const match = chooseVoice(voices, voice, lang);
+      if (match) utterance.voice = match as SpeechSynthesisVoice;
       utterance.onend = () => resolve(true);
       utterance.onerror = (e) => resolve(e.error === "interrupted" || e.error === "canceled");
       speechSynthesis.speak(utterance);
@@ -109,7 +137,8 @@ export class TTSService {
   private async speakNative(text: string): Promise<boolean> {
     const { voice, rate } = this.prefs();
     try {
-      return await native.ttsSpeak(text, voice || null, rate);
+      // `say` has no pitch control; Samantha ships with every Mac and suits Lucy.
+      return await native.ttsSpeak(text, voice || "Samantha", rate);
     } catch {
       return false;
     }

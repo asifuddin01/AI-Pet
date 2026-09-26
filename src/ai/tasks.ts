@@ -109,7 +109,7 @@ export const AskTask: PetTaskHandler = {
   title: "Answer",
   needsText: false,
   inMenu: false,
-  buildPrompt: (c) => PromptBuilder.ask(withSubject(c)),
+  buildPrompt: (c, prefs) => PromptBuilder.ask(withSubject(c), prefs),
 };
 
 export const ChatTask: PetTaskHandler = {
@@ -119,7 +119,7 @@ export const ChatTask: PetTaskHandler = {
   title: "Chat",
   needsText: false,
   inMenu: false,
-  buildPrompt: (c) => PromptBuilder.chat(c),
+  buildPrompt: (c, prefs) => PromptBuilder.chat(c, prefs),
 };
 
 export const DEFAULT_TASKS: PetTaskHandler[] = [
