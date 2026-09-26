@@ -612,9 +612,13 @@ const mixHex = (a: string, b: string, t: number) =>
 export function layerPlan(o: Outfit): Map<string, LayerLook> {
   const plan = new Map<string, LayerLook>();
   const suit = mixHex(o.top.from, o.top.to, 0.55);
-  plan.set("Layer_Suit", { color: suit, glow: o.top.accent, shine: o.top.shine });
+  const suitLook = { color: suit, glow: o.top.accent, shine: o.top.shine };
+  if (o.top.style === "leotard") plan.set("Layer_Leotard", suitLook);
+  else if (o.top.style === "crop") plan.set("Layer_CropTop", suitLook);
+  else if (o.top.style === "bikini") plan.set("Layer_BikiniTop", { color: suit, shine: o.top.shine });
+  else plan.set("Layer_Suit", suitLook);
   if (o.jacket) {
-    plan.set("Layer_Jacket", { color: o.jacket.from, opacity: o.jacket.opacity });
+    plan.set(o.jacket.offShoulder ? "Layer_JacketOff" : "Layer_Jacket", { color: o.jacket.from, opacity: o.jacket.opacity });
     plan.set("Layer_Sleeves", { color: o.jacket.sleeve?.[0] ?? o.jacket.from, opacity: o.jacket.opacity });
   } else if (o.top.sleeves) {
     plan.set("Layer_Sleeves", { color: suit });
@@ -623,11 +627,13 @@ export function layerPlan(o: Outfit): Map<string, LayerLook> {
   else if (o.bottom.style === "skirt") plan.set("Layer_Skirt", { color: o.bottom.color, glow: o.bottom.shade });
   else if (o.bottom.style === "shorts") plan.set("Layer_Shorts", { color: o.bottom.color });
   else if (o.bottom.style === "jeans") plan.set("Layer_Jeans", { color: o.bottom.color });
+  else if (o.bottom.style === "bikini") plan.set("Layer_BikiniBottom", { color: o.bottom.color, shine: o.top.shine });
   const legs = o.legs;
   const legShine = mixHex(legs.color, "#ffffff", 0.18);
   if (legs.style === "thighhigh") plan.set("Layer_ThighHigh", { color: legs.color, glow: legs.band, shine: legShine });
   if (legs.style === "socks") plan.set("Layer_Socks", { color: legs.color, glow: legs.band });
   if (legs.style === "tights" || legs.style === "tights-boots") plan.set("Layer_Tights", { color: legs.color, shine: legShine });
+  if (legs.style === "leggings") plan.set("Layer_Leggings", { color: legs.color, glow: legs.band, shine: legShine });
   if (legs.style === "sheer-boots") plan.set("Layer_Tights", { color: legs.color, opacity: 0.55 });
   if (legs.style === "boots" || legs.style === "tights-boots" || legs.style === "sheer-boots") {
     plan.set("Layer_Boots", { color: legs.shoe });

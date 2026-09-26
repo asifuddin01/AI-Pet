@@ -6,13 +6,13 @@ import { layerPlan } from "./VrmPet";
 const layers = (id: keyof typeof OUTFITS) => [...layerPlan(OUTFITS[id]).keys()].sort();
 
 describe("clothing layers per outfit", () => {
-  it("dresses the canon look: suit, cropped jacket, shorts, thigh-highs", () => {
+  it("dresses the canon look: leotard, off-shoulder jacket, thigh-highs", () => {
     expect(layers("edgerunner")).toEqual(
-      ["Layer_Jacket", "Layer_Shoes", "Layer_Shorts", "Layer_Sleeves", "Layer_Suit", "Layer_ThighHigh"].sort(),
+      ["Layer_JacketOff", "Layer_Leotard", "Layer_Shoes", "Layer_Sleeves", "Layer_ThighHigh"].sort(),
     );
     const plan = layerPlan(OUTFITS.edgerunner);
-    expect(plan.get("Layer_Suit")?.glow).toBe(OUTFITS.edgerunner.top.accent);
-    expect(plan.get("Layer_Jacket")?.color).toBe(OUTFITS.edgerunner.jacket?.from);
+    expect(plan.get("Layer_Leotard")?.glow).toBe(OUTFITS.edgerunner.top.accent);
+    expect(plan.get("Layer_JacketOff")?.color).toBe(OUTFITS.edgerunner.jacket?.from);
   });
 
   it("casual: turtleneck sleeves without a jacket, jeans, glasses and necklace", () => {
@@ -25,6 +25,7 @@ describe("clothing layers per outfit", () => {
   it("dresses use the skirt in the suit colour; sunglasses add lenses", () => {
     const plan = layerPlan(OUTFITS.cyberdress);
     expect(plan.get("Layer_Skirt")?.color).toBe(plan.get("Layer_Suit")?.color);
+    expect(layers("pool")).toContain("Layer_Leotard");
     expect(layers("pool")).toContain("Layer_Lenses");
     expect(layers("pool")).not.toContain("Layer_Shorts");
   });
@@ -35,10 +36,18 @@ describe("clothing layers per outfit", () => {
     expect(plan.has("Layer_Boots")).toBe(true);
   });
 
-  it("every outfit wears a suit and shoes", () => {
+  it("crop tops and bikinis use their own layers", () => {
+    expect(layers("street")).toContain("Layer_CropTop");
+    expect(layers("street")).not.toContain("Layer_Suit");
+    expect(layers("beach")).toEqual(expect.arrayContaining(["Layer_BikiniTop", "Layer_BikiniBottom", "Layer_Lenses"]));
+    expect(layers("gym")).toEqual(expect.arrayContaining(["Layer_CropTop", "Layer_Leggings"]));
+  });
+
+  it("every outfit has a top and shoes", () => {
+    const tops = ["Layer_Suit", "Layer_Leotard", "Layer_CropTop", "Layer_BikiniTop"];
     for (const id of OUTFIT_IDS) {
       const plan = layerPlan(OUTFITS[id]);
-      expect(plan.has("Layer_Suit"), id).toBe(true);
+      expect(tops.some((t) => plan.has(t)), id).toBe(true);
       expect(plan.has("Layer_Shoes"), id).toBe(true);
     }
   });

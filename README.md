@@ -30,7 +30,7 @@ Built with **Tauri 2 + Rust + TypeScript** (no Electron, no frontend framework) 
 - **Any AI provider** — OpenAI, Anthropic (Claude), Ollama / LM Studio (local, no key), OpenRouter, or any OpenAI-compatible endpoint.
 - **Private by design** — nothing is read until you press the shortcut, nothing is sent until you pick an AI action, keys live in the Keychain, and selected text is never logged.
 - **Menu bar icon** + **right-click menu** for control even while the pet is hidden.
-- **Moods & wardrobe** — Lucy's mood (confident, focused, dreamy, sleepy, playful, melancholy) follows the time of day and how you use her; in *auto* mode she changes outfit and hair when it shifts (11 outfits, from her edgerunner suit to a casual turtleneck-and-jeans look, all fully clothed). Pick one yourself in Settings or the right-click menu.
+- **Moods & wardrobe** — Lucy's mood (confident, focused, dreamy, sleepy, playful, melancholy) follows the time of day and how you use her; in *auto* mode she changes outfit and hair when it shifts (14 outfits: her anime leotard with the off-shoulder jacket, bodysuits, dresses, a crop top with shorts, a bikini, a high-cut swimsuit, gym wear, a casual turtleneck-and-jeans look and more). Pick one yourself in Settings or the right-click menu.
 - **Her voice** — a calm, low, unhurried delivery on the best installed macOS voice (Premium/Enhanced first); pace and pitch follow her mood. Her replies have a light Night City flavour; utility tasks return clean results.
 - **Three looks** — built-in drawing, a **3D VRM model** (procedural idle/walk/talk/think/sleep animation, blinking, lip movement, hair physics, one model per outfit if you like), or **anime clips / animated images** per state.
 - **Lightweight** — the built-in look sits completely still between occasional blinks; ~33 KB of gzipped JS; the 3D engine loads only if you pick a 3D model; no work at all while hidden.
@@ -150,8 +150,9 @@ licence terms.
 **Layered models change clothes live.** If a model contains clothing meshes named `Layer_*`, the
 pet dresses it from each outfit's definition: it shows and hides the layers and tints them
 (colour, neon accent glow, gloss, see-through), so mood-driven outfit changes happen without
-reloading. Recognised layers: `Layer_Suit`, `Layer_Jacket`, `Layer_Sleeves`, `Layer_Shorts`,
-`Layer_Skirt`, `Layer_Jeans`, `Layer_ThighHigh`, `Layer_Tights`, `Layer_Socks`, `Layer_Boots`,
+reloading. Recognised layers: `Layer_Suit`, `Layer_Leotard`, `Layer_CropTop`, `Layer_BikiniTop`,
+`Layer_BikiniBottom`, `Layer_Jacket`, `Layer_JacketOff`, `Layer_Sleeves`, `Layer_Shorts`, `Layer_Skirt`,
+`Layer_Jeans`, `Layer_Leggings`, `Layer_ThighHigh`, `Layer_Tights`, `Layer_Socks`, `Layer_Boots`,
 `Layer_Shoes`, `Layer_Glasses`, `Layer_Lenses`, `Layer_Necklace`. Give them neutral (white)
 textures; the outfit supplies the colours.
 
@@ -220,7 +221,7 @@ More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Development
 
 ```bash
-npm test               # 85 TypeScript unit tests (Vitest)
+npm test               # 86 TypeScript unit tests (Vitest)
 npm run typecheck
 cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings   # 34 Rust tests
 ```

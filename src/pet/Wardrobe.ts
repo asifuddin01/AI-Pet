@@ -19,7 +19,10 @@ export type OutfitId =
   | "cyberdress"
   | "techwear"
   | "nightcity"
-  | "casual";
+  | "casual"
+  | "street"
+  | "beach"
+  | "gym";
 
 export interface HairPalette {
   /** Five stops from crown to tips (front hair); back hair is derived darker. */
@@ -34,7 +37,8 @@ export interface Outfit {
   hair: HairPalette;
   /** Bodysuit, swimsuit or dress (the dress replaces top + bottom). */
   top: {
-    style: "bodysuit" | "swimsuit" | "dress";
+    /** leotard: Lucy's high-neck, sleeveless, high-cut suit; crop: ends under the bust; bikini: a bandeau. */
+    style: "bodysuit" | "leotard" | "swimsuit" | "dress" | "crop" | "bikini";
     from: string;
     to: string;
     accent: string;
@@ -53,10 +57,12 @@ export interface Outfit {
         opacity?: number;
         /** Sleeve colours when they differ from the body of the jacket. */
         sleeve?: [string, string];
+        /** Worn slipping off the shoulders. */
+        offShoulder?: boolean;
       };
-  bottom: { style: "shorts" | "skirt" | "jeans" | "none"; color: string; shade: string };
+  bottom: { style: "shorts" | "skirt" | "jeans" | "bikini" | "none"; color: string; shade: string };
   legs: {
-    style: "thighhigh" | "tights" | "tights-boots" | "socks" | "sheer-boots" | "boots" | "bare";
+    style: "thighhigh" | "tights" | "leggings" | "tights-boots" | "socks" | "sheer-boots" | "boots" | "bare";
     color: string;
     band: string;
     shoe: string;
@@ -93,9 +99,9 @@ export const OUTFITS: Record<OutfitId, Outfit> = {
     name: "Edgerunner",
     emoji: "⚡",
     hair: HAIR.rainbow,
-    top: { style: "bodysuit", from: "#2e2a47", to: "#15131f", accent: "#ff3d6e", shine: "#4a4570" },
-    jacket: { style: "cropped", from: "#ffffff", to: "#d9d6ec", lining: "#bfe2f6", trim: "#1b1829" },
-    bottom: { style: "shorts", color: "#f3f2f9", shade: "#d3d0e4" },
+    top: { style: "leotard", from: "#2e2a47", to: "#15131f", accent: "#ff3d6e", shine: "#4a4570" },
+    jacket: { style: "cropped", from: "#ffffff", to: "#d9d6ec", lining: "#bfe2f6", trim: "#1b1829", offShoulder: true },
+    bottom: { style: "none", color: "#1b1829", shade: "#1b1829" },
     legs: { style: "thighhigh", color: "#1b1829", band: "#3d3858", shoe: "#221f33" },
     extras: [],
   },
@@ -148,7 +154,7 @@ export const OUTFITS: Record<OutfitId, Outfit> = {
     name: "Pool day",
     emoji: "🏖",
     hair: HAIR.rainbow,
-    top: { style: "swimsuit", from: "#23213a", to: "#101019", accent: "#ff3d6e", shine: "#4a4570" },
+    top: { style: "leotard", from: "#23213a", to: "#101019", accent: "#ff3d6e", shine: "#4a4570" },
     jacket: null,
     bottom: { style: "none", color: "#23213a", shade: "#3a3556" },
     legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#5fd8ff" },
@@ -205,6 +211,39 @@ export const OUTFITS: Record<OutfitId, Outfit> = {
     legs: { style: "tights", color: "#4f72a3", band: "#4f72a3", shoe: "#f1eff7" },
     extras: ["glasses", "pendant"],
   },
+  street: {
+    id: "street",
+    name: "Street",
+    emoji: "🛹",
+    hair: HAIR.rainbow,
+    top: { style: "crop", from: "#221f2e", to: "#121018", accent: "#ff3d6e", shine: "#4a4570" },
+    jacket: { style: "cropped", from: "#ffffff", to: "#d9d6ec", lining: "#bfe2f6", trim: "#1b1829" },
+    bottom: { style: "shorts", color: "#5a7fb3", shade: "#3d5c88" },
+    legs: { style: "thighhigh", color: "#1b1829", band: "#ff3d6e", shoe: "#f1eff7" },
+    extras: [],
+  },
+  beach: {
+    id: "beach",
+    name: "Beach",
+    emoji: "🏝️",
+    hair: HAIR.pastel,
+    top: { style: "bikini", from: "#ff6aa0", to: "#d93a77", accent: "#ffffff", shine: "#ffb3cf" },
+    jacket: null,
+    bottom: { style: "bikini", color: "#e8447f", shade: "#b82e63" },
+    legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#5fd8ff" },
+    extras: ["sunglasses"],
+  },
+  gym: {
+    id: "gym",
+    name: "Gym",
+    emoji: "🏋️",
+    hair: HAIR.cyber,
+    top: { style: "crop", from: "#2b2f4a", to: "#16182b", accent: "#5ff3ff", shine: "#5a608a" },
+    jacket: null,
+    bottom: { style: "none", color: "#23253a", shade: "#16182b" },
+    legs: { style: "leggings", color: "#23253a", band: "#5ff3ff", shoe: "#f1eff7" },
+    extras: [],
+  },
   rain: {
     id: "rain",
     name: "Neon rain",
@@ -227,11 +266,11 @@ export function outfitById(id: string | undefined): Outfit {
 
 /** Which outfits suit each mood, with weights. */
 export const MOOD_OUTFITS: Record<Mood, [OutfitId, number][]> = {
-  confident: [["edgerunner", 3], ["nightcity", 2], ["cyberdress", 2], ["techwear", 2], ["nightout", 1]],
-  focused: [["netrunner", 3], ["casual", 2], ["nightcity", 1], ["edgerunner", 1]],
+  confident: [["edgerunner", 3], ["street", 2], ["nightcity", 2], ["cyberdress", 2], ["techwear", 2], ["nightout", 1]],
+  focused: [["netrunner", 3], ["casual", 2], ["gym", 1], ["nightcity", 1], ["edgerunner", 1]],
   dreamy: [["moonlight", 3], ["techwear", 1], ["rain", 1]],
   sleepy: [["cozy", 3], ["moonlight", 1]],
-  playful: [["nightout", 2], ["pool", 2], ["cyberdress", 1], ["edgerunner", 1]],
+  playful: [["nightout", 2], ["beach", 2], ["street", 2], ["pool", 1], ["gym", 1], ["cyberdress", 1], ["edgerunner", 1]],
   melancholy: [["rain", 3], ["casual", 2], ["cozy", 1]],
 };
 

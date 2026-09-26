@@ -31,6 +31,9 @@ export function renderDefs(o: Outfit): string {
   <linearGradient id="lucy-top" gradientUnits="userSpaceOnUse" x1="0" y1="34" x2="0" y2="72"><stop offset="0" stop-color="${o.top.from}"/><stop offset="1" stop-color="${o.top.to}"/></linearGradient>
   <linearGradient id="lucy-jacket" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${j.from}"/><stop offset="1" stop-color="${j.to}"/></linearGradient>
   <linearGradient id="lucy-sleeve" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${sleeve[0]}"/><stop offset="1" stop-color="${sleeve[1]}"/></linearGradient>
+  <clipPath id="lucy-clip-crop"><rect x="0" y="0" width="120" height="47.6"/></clipPath>
+  <clipPath id="lucy-clip-band"><rect x="0" y="38.9" width="120" height="8.3"/></clipPath>
+  <clipPath id="lucy-clip-brief"><rect x="0" y="61" width="120" height="12"/></clipPath>
   <linearGradient id="lucy-legwear" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${o.legs.color}"/><stop offset=".55" stop-color="${shade(o.legs.color)}"/><stop offset="1" stop-color="${o.legs.color}"/></linearGradient>
 </defs>`;
 }
@@ -57,6 +60,10 @@ const HIPS =
 const SHORTS =
   "M53.2 58.2 L66.8 58.2 C69.5 59.5 72 61.5 72.6 64.8 L73 70 L62.6 70.6 L60 66.4 L57.4 70.6 L47 70 " +
   "L47.4 64.8 C48 61.5 50.5 59.5 53.2 58.2 Z";
+/** High-cut leotard bottom: up to the hip bones at the sides. */
+const LEOTARD =
+  "M53.2 58.2 L66.8 58.2 C68.6 59.2 69.8 60.2 70.6 61.4 C66 64.5 62.4 67.8 60.6 70.6 L59.4 70.6 " +
+  "C57.6 67.8 54 64.5 49.4 61.4 C50.2 60.2 51.4 59.2 53.2 58.2 Z";
 const SKIRT = "M53.2 58.2 L66.8 58.2 C70.2 60 73.6 66 75.2 72.6 L44.8 72.6 C46.4 66 49.8 60 53.2 58.2 Z";
 const DRESS =
   "M54.6 35.6 L65.4 35.6 C67.8 36 69.6 37.4 70 39.6 C70.4 42.6 69.6 45.4 68.6 47.8 C67.6 50.4 66.6 52.6 66.4 55 " +
@@ -130,6 +137,7 @@ function legLeft(o: Outfit): string {
       }
       break;
     case "tights":
+    case "leggings":
       wear = `<path d="${LEG_SKIN}" fill="url(#lucy-legwear)"/>
         <ellipse cx="54.4" cy="87" rx=".8" ry="2.4" fill="#ffffff" opacity=".1"/>`;
       break;
@@ -195,9 +203,25 @@ function body(o: Outfit): string {
       <path d="M44.6 79 L75.4 79" stroke="${t.accent}" stroke-width=".9"/>
       <path d="M50 66 L48.2 78.6 M60 58 L60 78.6 M70 66 L71.8 78.6" stroke="${t.shine}" stroke-width=".35" opacity=".8"/>
       ${collar}${emblem}`;
+  } else if (t.style === "crop" || t.style === "bikini") {
+    const skin = `<path d="${TORSO}" fill="url(#lucy-skin)"/>
+      <path d="M53.6 49.6 Q60 51.2 66.4 49.6" stroke="#e8b7a8" stroke-width=".35" fill="none" opacity=".6"/>
+      <path d="M60 53 L60 54.1" stroke="#dca493" stroke-width=".55" stroke-linecap="round"/>`;
+    if (t.style === "crop") {
+      clothes = `${skin}<g clip-path="url(#lucy-clip-crop)"><path d="${TORSO}" fill="url(#lucy-top)"/>${form}${collar}${emblem}</g>
+        <path d="M51.3 47.5 C56 48.3 64 48.3 68.7 47.5" stroke="${t.accent}" stroke-width=".55" fill="none"/>`;
+    } else {
+      clothes = `${skin}<g clip-path="url(#lucy-clip-band)"><path d="${TORSO}" fill="url(#lucy-top)"/>${form}</g>
+        <path d="M56.2 39.2 L58.4 34.6 M63.8 39.2 L61.6 34.6" stroke="${t.from}" stroke-width=".7" stroke-linecap="round"/>
+        <path d="M51 47.1 C56 47.9 64 47.9 69 47.1" stroke="${t.accent}" stroke-width=".4" fill="none" opacity=".8"/>`;
+    }
   } else {
     clothes = `<path d="${TORSO}" fill="url(#lucy-top)"/>${form}${collar}${emblem}${lines}`;
-    if (t.style === "swimsuit") {
+    if (t.style === "leotard") {
+      clothes = `<path d="${HIPS}" fill="url(#lucy-skin)"/>` + clothes +
+        `<path d="${LEOTARD}" fill="url(#lucy-top)"/>
+        <path d="M49.4 61.4 C54 64.5 57.6 67.8 59.4 70.6 M70.6 61.4 C66 64.5 62.4 67.8 60.6 70.6" stroke="${t.accent}" stroke-width=".45" fill="none"/>`;
+    } else if (t.style === "swimsuit") {
       clothes += `<path d="${HIPS}" fill="url(#lucy-top)"/>
         <path d="M47 66.4 C52 67.4 56.4 69 60 70.6 C63.6 69 68 67.4 73 66.4" stroke="${t.accent}" stroke-width=".6" fill="none"/>`;
     } else if (o.bottom.style === "none") {
@@ -210,6 +234,12 @@ function body(o: Outfit): string {
 
   let bottom = "";
   const b = o.bottom;
+  if (t.style === "crop" || t.style === "bikini") bottom += `<path d="${HIPS}" fill="url(#lucy-skin)"/>`;
+  if (b.style === "bikini") {
+    bottom += `<g clip-path="url(#lucy-clip-brief)"><path d="${HIPS}" fill="${b.color}"/></g>
+      <path d="M47.6 61.4 C52 62.2 56 62.4 60 62.4 C64 62.4 68 62.2 72.4 61.4" stroke="${b.shade}" stroke-width=".5" fill="none"/>`;
+  }
+  if (o.legs.style === "leggings") bottom += `<path d="${HIPS}" fill="url(#lucy-legwear)"/>`;
   if (t.style !== "dress" && (b.style === "shorts" || b.style === "jeans")) {
     bottom = `<path d="${SHORTS}" fill="${b.color}"/>
       <path d="M60 62 L60 66.4 M49.4 66 C51 64.4 52.4 63.6 54 63.4 M70.6 66 C69 64.4 67.6 63.6 66 63.4" stroke="${b.shade}" stroke-width=".5" fill="none"/>`;
@@ -217,7 +247,7 @@ function body(o: Outfit): string {
     bottom = `<path d="${SKIRT}" fill="${b.color}"/>
       <path d="M50.5 62 L48.6 72.4 M55 60 L54 72.4 M60 60 L60 72.4 M65 60 L66 72.4 M69.5 62 L71.4 72.4" stroke="${b.shade}" stroke-width=".45"/>`;
   }
-  if (t.style !== "dress" && b.style !== "none") {
+  if (t.style !== "dress" && b.style !== "none" && b.style !== "bikini") {
     bottom += `<path d="M52.4 58 L67.6 58 L68.3 59.9 L51.7 59.9 Z" fill="${INK}"/>
       <rect x="59" y="57.7" width="2" height="2.5" rx=".4" fill="#cfcce0"/>`;
   }
