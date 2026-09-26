@@ -3,7 +3,7 @@
 ## Automated
 
 ```bash
-npm test                                   # Vitest — 80 tests
+npm test                                   # Vitest — 85 tests
 npm run typecheck
 cd src-tauri
 cargo test                                 # 34 tests
@@ -22,7 +22,7 @@ cargo clippy --all-targets -- -D warnings
 | Hotkeys | `src-tauri/src/hotkey.rs` — parsing, modifier requirement; `src/util/shortcut.test.ts` |
 | Language / speech | `src/ai/language.test.ts`, `src/services/speech.test.ts` |
 | Moods / wardrobe / voice | `src/pet/Wardrobe.test.ts` — mood decisions, outfit picks, mood tracker, voice choice |
-| Characters | `src/components/SpritePet.test.ts` — state fallbacks; `src-tauri/src/characters.rs` — name sanitizing, asset kinds |
+| Characters | `src/components/SpritePet.test.ts` — state fallbacks; `src/components/VrmPet.test.ts` — outfit → clothing layers; `src-tauri/src/characters.rs` — name sanitizing, asset kinds |
 
 CI (`.github/workflows/ci.yml`) runs all of the above on Linux and again on macOS, then builds the
 universal `.dmg`.

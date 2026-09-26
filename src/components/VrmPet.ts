@@ -79,6 +79,18 @@ export class VrmPet implements CharacterView {
   private mouthTarget = 0;
   private nextMouth = 0;
   private expressions = new Map<string, number>();
+  /** Current (blended) rotation of each posed bone, and the hips' rest position. */
+  private current = new Map<VRMHumanBoneName, THREE.Quaternion>();
+  private hipsRest = new THREE.Vector3();
+  private hipsOffset = new THREE.Vector3();
+  private weight = 1;
+  private weightSide = 1;
+  private nextWeightSwap = 6;
+  private handOnHip = false;
+  private hipHand = 0;
+  private nextStance = 5;
+  /** Clothing layers inside the model ("Layer_*" meshes), toggled and tinted per outfit. */
+  private layers = new Map<string, THREE.Mesh[]>();
 
   constructor(
     parent: HTMLElement,
@@ -121,6 +133,7 @@ export class VrmPet implements CharacterView {
 
   setOutfit(outfit: Outfit): void {
     this.outfit = outfit;
+    this.applyLayers(outfit);
     const model = this.modelFor(outfit);
     if (model !== this.modelName) void this.load(model);
   }
@@ -194,6 +207,36 @@ export class VrmPet implements CharacterView {
     this.el.remove();
   }
 
+  // ------------------------------------------------------------------ clothing layers
+
+  private collectLayers(vrm: VRM): void {
+    this.layers.clear();
+    vrm.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      let node: THREE.Object3D | null = mesh;
+      while (node && !node.name.startsWith("Layer_")) node = node.parent;
+      if (!node) return;
+      const list = this.layers.get(node.name) ?? [];
+      list.push(mesh);
+      this.layers.set(node.name, list);
+    });
+  }
+
+  /** Dress a layered model (see scripts in docs) from the outfit definition. */
+  private applyLayers(outfit: Outfit): void {
+    if (!this.layers.size) return;
+    const plan = layerPlan(outfit);
+    for (const [name, meshes] of this.layers) {
+      const look = plan.get(name);
+      for (const mesh of meshes) {
+        mesh.visible = !!look;
+        if (!look) continue;
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) tint(m, look);
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ loading
 
   private async load(name: string): Promise<void> {
@@ -218,6 +261,11 @@ export class VrmPet implements CharacterView {
       vrm.scene.traverse((o) => (o.frustumCulled = false));
       this.unloadModel();
       this.vrm = vrm;
+      this.current.clear();
+      vrm.humanoid.resetNormalizedPose();
+      this.hipsRest.copy(vrm.humanoid.getNormalizedBoneNode("hips")?.position ?? new THREE.Vector3());
+      this.collectLayers(vrm);
+      this.applyLayers(this.outfit);
       this.root.add(vrm.scene);
       if (vrm.lookAt) vrm.lookAt.target = this.lookTarget;
       this.frameCamera();
@@ -280,10 +328,6 @@ export class VrmPet implements CharacterView {
     return this.vrm?.humanoid.getNormalizedBoneNode(name) ?? null;
   }
 
-  private rot(name: VRMHumanBoneName, x: number, y: number, z: number): void {
-    this.bone(name)?.rotation.set(x, y, z);
-  }
-
   private resetPose(): void {
     if (!this.vrm) return;
     this.vrm.humanoid.resetNormalizedPose();
@@ -304,63 +348,127 @@ export class VrmPet implements CharacterView {
   private animate(dt: number): void {
     const t = this.time;
     const a = this.anim;
-    this.resetPose();
+    const pose = new Map<VRMHumanBoneName, Rot>();
+    const set = (b: VRMHumanBoneName, r: Rot) => pose.set(b, r);
+    const add = (b: VRMHumanBoneName, r: Partial<Rot>) => {
+      const cur = pose.get(b) ?? { x: 0, y: 0, z: 0 };
+      pose.set(b, { x: cur.x + (r.x ?? 0), y: cur.y + (r.y ?? 0), z: cur.z + (r.z ?? 0) });
+    };
 
     // Turn slightly toward where she's walking; face the viewer otherwise.
     const targetYaw = a === "walk" ? this.facing * 0.55 : 0;
-    this.yaw = approach(this.yaw, targetYaw, 6, dt);
+    this.yaw = approach(this.yaw, targetYaw, 5, dt);
     this.root.rotation.y = this.yaw;
 
-    const breath = Math.sin(t * ((2 * Math.PI) / (a === "sleep" ? 4.6 : 3.4)));
-    let hipsY = 0;
+    // Weight shifts from one leg to the other every so often (contrapposto).
+    if (t >= this.nextWeightSwap) {
+      this.weightSide = -this.weightSide;
+      this.nextWeightSwap = t + 7 + Math.random() * 9;
+    }
+    this.weight = approach(this.weight, this.weightSide, 1.6, dt);
+    const w = a === "walk" ? 0 : this.weight; // +1 = weight on her left leg
+    // Hand-on-hip stance now and then when she's feeling bold.
+    if (t >= this.nextStance) {
+      const bold = this.mood === "confident" || this.mood === "playful";
+      this.handOnHip = !this.handOnHip && Math.random() < (bold ? 0.7 : 0.35);
+      this.nextStance = t + 9 + Math.random() * 14;
+    }
+    const hipHand = approach(this.hipHand, this.handOnHip && (a === "idle" || a === "listening" || a === "talking") ? 1 : 0, 2.2, dt);
+    this.hipHand = hipHand;
 
-    // Base pose: arms relaxed at the sides, elbows softly bent.
-    let lUpper = { x: 0, y: 0, z: -1.2 };
-    let rUpper = { x: 0, y: 0, z: 1.2 };
-    let lLower = { x: 0, y: -0.25, z: 0 };
-    let rLower = { x: 0, y: 0.25, z: 0 };
-    let head = { x: 0, y: Math.sin(t * 0.37) * 0.05, z: Math.sin(t * 0.23) * 0.02 };
-    const chest = { x: breath * 0.02, y: 0, z: 0 };
-    const spine = { x: 0, y: 0, z: Math.sin(t * 0.5) * 0.012 };
-    const legs = { l: 0, r: 0, lk: 0, rk: 0 };
+    const breath = Math.sin(t * ((2 * Math.PI) / (a === "sleep" ? 4.6 : 3.6)));
+    const n1 = noise(t * 0.35, 1), n2 = noise(t * 0.28, 2), n3 = noise(t * 0.5, 3);
+    const hipsOffset = new THREE.Vector3();
+
+    // ---- idle base: relaxed, asymmetric, never perfectly still
+    set("hips", { x: 0, y: n2 * 0.03, z: w * 0.055 });
+    hipsOffset.x = w * 0.018;
+    hipsOffset.y = -Math.abs(w) * 0.006;
+    set("spine", { x: 0.02 + n1 * 0.01, y: -n2 * 0.02, z: -w * 0.03 });
+    set("chest", { x: breath * 0.018, y: n3 * 0.015, z: -w * 0.025 });
+    set("upperChest", { x: breath * 0.012, y: 0, z: 0 });
+    set("neck", { x: 0, y: 0, z: 0 });
+    let head: Rot = { x: n1 * 0.05 - 0.02, y: n2 * 0.09, z: w * 0.035 + n3 * 0.03 };
+    set("leftShoulder", { x: 0, y: 0, z: -breath * 0.012 });
+    set("rightShoulder", { x: 0, y: 0, z: breath * 0.012 });
+    // legs: the standing leg straight under the hip, the free leg relaxed and bent
+    const freeL = clamp01(-w), freeR = clamp01(w);
+    set("leftUpperLeg", { x: -0.06 * freeL, y: -0.05 * freeL, z: -w * 0.055 - 0.02 * freeL });
+    set("rightUpperLeg", { x: -0.06 * freeR, y: 0.05 * freeR, z: -w * 0.055 + 0.02 * freeR });
+    set("leftLowerLeg", { x: 0.2 * freeL + 0.02, y: 0, z: 0 });
+    set("rightLowerLeg", { x: 0.2 * freeR + 0.02, y: 0, z: 0 });
+    set("leftFoot", { x: -0.1 * freeL, y: 0, z: 0 });
+    set("rightFoot", { x: -0.1 * freeR, y: 0, z: 0 });
+    // arms hang loosely, elbows soft, a touch of sway with the breath
+    let lUpper: Rot = { x: 0.05 + n2 * 0.03, y: 0.1, z: -1.06 + breath * 0.015 };
+    let rUpper: Rot = { x: 0.05 - n1 * 0.03, y: -0.1, z: 1.06 - breath * 0.015 };
+    let lLower: Rot = { x: 0, y: -0.32 + n3 * 0.05, z: 0 };
+    let rLower: Rot = { x: 0, y: 0.28 - n1 * 0.05, z: 0 };
+    let lHand: Rot = { x: 0, y: 0, z: -0.12 };
+    let rHand: Rot = { x: 0, y: 0, z: 0.12 };
 
     if (a === "walk") {
-      const phase = t * ((2 * Math.PI) / 1.05);
-      const s = Math.sin(phase);
-      legs.l = -s * 0.38;
-      legs.r = s * 0.38;
-      // Knees bend while each leg swings forward, and stay nearly straight while planted.
-      legs.lk = 0.05 + Math.max(0, Math.cos(phase)) * 0.6;
-      legs.rk = 0.05 + Math.max(0, -Math.cos(phase)) * 0.6;
-      lUpper = { ...lUpper, x: s * 0.32 };
-      rUpper = { ...rUpper, x: -s * 0.32 };
-      hipsY = Math.abs(Math.cos(phase)) * 0.012;
-      spine.y = s * 0.06;
+      const phase = t * ((2 * Math.PI) / 1.1);
+      const s = Math.sin(phase), c = Math.cos(phase);
+      set("hips", { x: 0.02, y: s * 0.09, z: -s * 0.05 });
+      hipsOffset.set(-s * 0.012, Math.abs(c) * 0.018 - 0.012, 0);
+      set("spine", { x: 0.04, y: -s * 0.05, z: s * 0.02 });
+      set("chest", { x: breath * 0.012, y: -s * 0.05, z: s * 0.02 });
+      head = { x: 0.02 + n1 * 0.02, y: s * 0.04, z: 0 };
+      set("leftUpperLeg", { x: -s * 0.42, y: 0, z: 0.02 });
+      set("rightUpperLeg", { x: s * 0.42, y: 0, z: -0.02 });
+      // knees bend as each leg swings through, stay soft while planted
+      set("leftLowerLeg", { x: 0.06 + Math.max(0, c) * 0.75, y: 0, z: 0 });
+      set("rightLowerLeg", { x: 0.06 + Math.max(0, -c) * 0.75, y: 0, z: 0 });
+      set("leftFoot", { x: -0.25 * Math.max(0, -s) + 0.2 * Math.max(0, c), y: 0, z: 0 });
+      set("rightFoot", { x: -0.25 * Math.max(0, s) + 0.2 * Math.max(0, -c), y: 0, z: 0 });
+      lUpper = { x: s * 0.38, y: 0.1, z: -1.12 };
+      rUpper = { x: -s * 0.38, y: -0.1, z: 1.12 };
+      lLower = { x: 0, y: -0.25 - Math.max(0, -s) * 0.45, z: 0 };
+      rLower = { x: 0, y: 0.25 + Math.max(0, s) * 0.45, z: 0 };
     } else if (a === "thinking") {
-      head = { x: -0.08, y: 0.1, z: 0.13 };
+      head = { x: -0.1 + n1 * 0.02, y: 0.12 + n2 * 0.03, z: 0.14 };
       rUpper = { x: -0.45, y: 0.35, z: 1.1 };
       rLower = { x: 0, y: 2.25, z: 0 };
+      rHand = { x: 0, y: 0, z: -0.2 };
     } else if (a === "sleep") {
-      head = { x: 0.28, y: 0, z: 0.14 };
-      chest.x = breath * 0.035;
+      head = { x: 0.3, y: 0.05, z: 0.16 };
+      add("chest", { x: breath * 0.025 + 0.06 });
+      add("spine", { x: 0.05 });
+      lUpper = { ...lUpper, z: -1.12 };
+      rUpper = { ...rUpper, z: 1.12 };
     } else if (a === "error") {
-      head = { x: 0.14, y: Math.sin(t * 9) * 0.03, z: -0.05 };
+      head = { x: 0.14, y: Math.sin(t * 7) * 0.05, z: -0.08 };
+      rUpper = { x: -0.5, y: 0.5, z: 0.4 };
+      rLower = { x: 0, y: 0, z: -2.2 };
     } else if (a === "listening") {
-      head = { x: -0.04, y: 0, z: -0.14 };
+      head = { x: -0.05 + n1 * 0.02, y: n2 * 0.05, z: -0.16 };
     } else if (a === "talking") {
-      head = { x: Math.sin(t * 5) * 0.025, y: Math.sin(t * 1.3) * 0.06, z: 0.03 };
+      head = { x: n1 * 0.05 + Math.sin(t * 4.3) * 0.02, y: n2 * 0.1, z: 0.04 + n3 * 0.04 };
+      // hands join in now and then while she explains
+      const gest = clamp01(noise(t * 0.6, 7) * 1.6);
+      rUpper = mix(rUpper, { x: -0.55, y: 0.25, z: 1.05 }, gest);
+      rLower = mix(rLower, { x: 0, y: 1.5 + Math.sin(t * 2.6) * 0.2, z: 0 }, gest);
+      rHand = mix(rHand, { x: 0, y: 0, z: -0.25 + Math.sin(t * 3.1) * 0.15 }, gest);
     }
 
-    // Gestures blend over the base pose.
+    // hand on the hip (left arm), elbow out
+    if (hipHand > 0.001) {
+      lUpper = mix(lUpper, { x: 0.6, y: -0.3, z: -0.5 }, hipHand);
+      lLower = mix(lLower, { x: 0, y: -1.3, z: -0.9 }, hipHand);
+      lHand = mix(lHand, { x: 0, y: -0.2, z: 0.45 }, hipHand);
+    }
+
+    // ---- gestures on top
     const wave = this.gestureWeight("wave");
     if (wave) {
-      // Elbow at shoulder height, forearm up and swaying.
       rUpper = mix(rUpper, { x: 0, y: 0.25, z: -0.2 }, wave);
-      rLower = mix(rLower, { x: 0, y: 0, z: -1.35 + Math.sin(t * 11) * 0.35 }, wave);
+      rLower = mix(rLower, { x: 0, y: 0, z: -1.35 + Math.sin(t * 10) * 0.32 }, wave);
+      rHand = mix(rHand, { x: 0, y: 0, z: Math.sin(t * 10 - 0.6) * 0.25 }, wave);
+      head = mix(head, { x: -0.03, y: -0.08, z: 0.1 }, wave);
     }
     const hair = this.gestureWeight("hair-touch");
     if (hair) {
-      // Elbow out to the side, hand up by her ear, head leaning into it.
       rUpper = mix(rUpper, { x: 0, y: 0.45, z: -0.6 }, hair);
       rLower = mix(rLower, { x: 0, y: 0, z: -2.4 }, hair);
       head = mix(head, { x: 0.04, y: -0.12, z: 0.1 }, hair);
@@ -369,23 +477,50 @@ export class VrmPet implements CharacterView {
     if (glance) head = mix(head, { x: -0.03, y: 0.55, z: 0.06 }, glance);
     const lookL = this.gestureWeight("look-left");
     const lookR = this.gestureWeight("look-right");
+    head = { ...head, y: head.y + (lookL - lookR) * 0.35 };
     const hop = Math.max(this.gestureWeight("hop"), this.gestureWeight("happy") * 0.5);
-    hipsY += Math.sin(hop * Math.PI) * 0.035 * hop;
+    hipsOffset.y += Math.sin(hop * Math.PI) * 0.035 * hop;
 
-    this.rot("leftUpperArm", lUpper.x, lUpper.y, lUpper.z);
-    this.rot("rightUpperArm", rUpper.x, rUpper.y, rUpper.z);
-    this.rot("leftLowerArm", lLower.x, lLower.y, lLower.z);
-    this.rot("rightLowerArm", rLower.x, rLower.y, rLower.z);
-    this.rot("spine", spine.x, spine.y, spine.z);
-    this.rot("chest", chest.x, chest.y, chest.z);
-    this.rot("neck", head.x * 0.4, head.y * 0.4, head.z * 0.4);
-    this.rot("head", head.x * 0.6, head.y * 0.6, head.z * 0.6);
-    this.rot("leftUpperLeg", legs.l, 0, 0);
-    this.rot("rightUpperLeg", legs.r, 0, 0);
-    this.rot("leftLowerLeg", legs.lk, 0, 0);
-    this.rot("rightLowerLeg", legs.rk, 0, 0);
+    set("leftUpperArm", lUpper);
+    set("rightUpperArm", rUpper);
+    set("leftLowerArm", lLower);
+    set("rightLowerArm", rLower);
+    set("leftHand", lHand);
+    set("rightHand", rHand);
+    set("neck", { x: head.x * 0.4, y: head.y * 0.4, z: head.z * 0.4 });
+    set("head", { x: head.x * 0.6, y: head.y * 0.6, z: head.z * 0.6 });
+    // relaxed, slightly curled fingers
+    for (const [side, sign] of [["left", -1], ["right", 1]] as const) {
+      for (const f of ["Index", "Middle", "Ring", "Little"] as const) {
+        const extra = f === "Index" ? 0 : f === "Little" ? 0.15 : 0.08;
+        set(`${side}${f}Proximal` as VRMHumanBoneName, { x: 0, y: 0, z: sign * (0.3 + extra) });
+        set(`${side}${f}Intermediate` as VRMHumanBoneName, { x: 0, y: 0, z: sign * (0.42 + extra) });
+        set(`${side}${f}Distal` as VRMHumanBoneName, { x: 0, y: 0, z: sign * (0.3 + extra) });
+      }
+      set(`${side}ThumbProximal` as VRMHumanBoneName, { x: 0, y: sign * -0.25, z: 0 });
+      set(`${side}ThumbDistal` as VRMHumanBoneName, { x: 0, y: sign * -0.2, z: 0 });
+    }
+
+    // Blend toward the target pose so nothing ever snaps.
+    const rate = a === "walk" ? 16 : 7;
+    const k = 1 - Math.exp(-rate * dt);
+    for (const [name, r] of pose) {
+      const node = this.bone(name);
+      if (!node) continue;
+      tmpEuler.set(r.x, r.y, r.z);
+      tmpQuat.setFromEuler(tmpEuler);
+      const cur = this.current.get(name);
+      if (!cur) {
+        this.current.set(name, tmpQuat.clone());
+        node.quaternion.copy(tmpQuat);
+      } else {
+        cur.slerp(tmpQuat, dt === 0 ? 1 : k);
+        node.quaternion.copy(cur);
+      }
+    }
+    this.hipsOffset.lerp(hipsOffset, dt === 0 ? 1 : k);
     const hips = this.bone("hips");
-    if (hips) hips.position.y += hipsY;
+    if (hips) hips.position.copy(this.hipsRest).add(this.hipsOffset);
 
     // Eyes follow the viewer, or glance aside.
     const side = (lookR - lookL) * 0.6 + glance * 0.9;
@@ -449,3 +584,81 @@ type Rot = { x: number; y: number; z: number };
 function mix(a: Rot, b: Rot, w: number): Rot {
   return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w, z: a.z + (b.z - a.z) * w };
 }
+
+const tmpEuler = new THREE.Euler();
+const tmpQuat = new THREE.Quaternion();
+
+/** Smooth, irregular motion in about -1..1 (sum of incommensurate sines). */
+function noise(t: number, seed: number): number {
+  return (
+    0.5 * Math.sin(t * 1.31 + seed * 1.7) +
+    0.3 * Math.sin(t * 2.17 + seed * 4.1) +
+    0.2 * Math.sin(t * 0.61 + seed * 2.3)
+  );
+}
+
+export interface LayerLook {
+  color: string;
+  glow?: string;
+  /** Glossy highlight colour (bodysuits, legwear). */
+  shine?: string;
+  opacity?: number;
+}
+
+const mixHex = (a: string, b: string, t: number) =>
+  "#" + new THREE.Color(a).lerp(new THREE.Color(b), t).getHexString();
+
+/** Which clothing layers an outfit uses, and their colours (pure; tested). */
+export function layerPlan(o: Outfit): Map<string, LayerLook> {
+  const plan = new Map<string, LayerLook>();
+  const suit = mixHex(o.top.from, o.top.to, 0.55);
+  plan.set("Layer_Suit", { color: suit, glow: o.top.accent, shine: o.top.shine });
+  if (o.jacket) {
+    plan.set("Layer_Jacket", { color: o.jacket.from, opacity: o.jacket.opacity });
+    plan.set("Layer_Sleeves", { color: o.jacket.sleeve?.[0] ?? o.jacket.from, opacity: o.jacket.opacity });
+  } else if (o.top.sleeves) {
+    plan.set("Layer_Sleeves", { color: suit });
+  }
+  if (o.top.style === "dress") plan.set("Layer_Skirt", { color: suit, glow: o.top.accent });
+  else if (o.bottom.style === "skirt") plan.set("Layer_Skirt", { color: o.bottom.color, glow: o.bottom.shade });
+  else if (o.bottom.style === "shorts") plan.set("Layer_Shorts", { color: o.bottom.color });
+  else if (o.bottom.style === "jeans") plan.set("Layer_Jeans", { color: o.bottom.color });
+  const legs = o.legs;
+  const legShine = mixHex(legs.color, "#ffffff", 0.18);
+  if (legs.style === "thighhigh") plan.set("Layer_ThighHigh", { color: legs.color, glow: legs.band, shine: legShine });
+  if (legs.style === "socks") plan.set("Layer_Socks", { color: legs.color, glow: legs.band });
+  if (legs.style === "tights" || legs.style === "tights-boots") plan.set("Layer_Tights", { color: legs.color, shine: legShine });
+  if (legs.style === "sheer-boots") plan.set("Layer_Tights", { color: legs.color, opacity: 0.55 });
+  if (legs.style === "boots" || legs.style === "tights-boots" || legs.style === "sheer-boots") {
+    plan.set("Layer_Boots", { color: legs.shoe });
+  }
+  plan.set("Layer_Shoes", { color: legs.shoe });
+  if (o.extras.includes("glasses") || o.extras.includes("sunglasses")) plan.set("Layer_Glasses", { color: "#16141c" });
+  if (o.extras.includes("sunglasses")) plan.set("Layer_Lenses", { color: "#1c1830", opacity: 0.82 });
+  if (o.extras.includes("pendant")) plan.set("Layer_Necklace", { color: "#e2b54f", glow: "#6b4b10" });
+  return plan;
+}
+
+function tint(material: THREE.Material, look: LayerLook): void {
+  const m = material as THREE.Material & {
+    color?: THREE.Color;
+    shadeColorFactor?: THREE.Color;
+    emissive?: THREE.Color;
+    uniforms?: { opacity?: { value: number }; matcapFactor?: { value: THREE.Color } };
+  };
+  const color = new THREE.Color(look.color);
+  m.color?.copy(color);
+  m.shadeColorFactor?.copy(color).multiplyScalar(0.62).lerp(new THREE.Color("#3a3560"), 0.18);
+  if (m.emissive) m.emissive.set(look.glow ?? "#000000");
+  if (look.shine && m.uniforms?.matcapFactor) m.uniforms.matcapFactor.value.set(look.shine).multiplyScalar(0.8);
+  const opacity = look.opacity ?? 1;
+  const transparent = opacity < 1;
+  if (m.transparent !== transparent) {
+    m.transparent = transparent;
+    m.needsUpdate = true;
+  }
+  if (m.uniforms?.opacity) m.uniforms.opacity.value = opacity;
+  else m.opacity = opacity;
+  m.depthWrite = !transparent;
+}
+

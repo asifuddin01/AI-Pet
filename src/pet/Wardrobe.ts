@@ -18,7 +18,8 @@ export type OutfitId =
   | "pool"
   | "cyberdress"
   | "techwear"
-  | "nightcity";
+  | "nightcity"
+  | "casual";
 
 export interface HairPalette {
   /** Five stops from crown to tips (front hair); back hair is derived darker. */
@@ -32,7 +33,15 @@ export interface Outfit {
   emoji: string;
   hair: HairPalette;
   /** Bodysuit, swimsuit or dress (the dress replaces top + bottom). */
-  top: { style: "bodysuit" | "swimsuit" | "dress"; from: string; to: string; accent: string; shine: string };
+  top: {
+    style: "bodysuit" | "swimsuit" | "dress";
+    from: string;
+    to: string;
+    accent: string;
+    shine: string;
+    /** Long sleeves (a sweater / turtleneck) when there's no jacket. */
+    sleeves?: boolean;
+  };
   jacket:
     | null
     | {
@@ -45,14 +54,14 @@ export interface Outfit {
         /** Sleeve colours when they differ from the body of the jacket. */
         sleeve?: [string, string];
       };
-  bottom: { style: "shorts" | "skirt" | "none"; color: string; shade: string };
+  bottom: { style: "shorts" | "skirt" | "jeans" | "none"; color: string; shade: string };
   legs: {
     style: "thighhigh" | "tights" | "tights-boots" | "socks" | "sheer-boots" | "boots" | "bare";
     color: string;
     band: string;
     shoe: string;
   };
-  extras: ("headphones" | "moonclip" | "circuits" | "sunglasses" | "pendant" | "cables")[];
+  extras: ("headphones" | "moonclip" | "circuits" | "sunglasses" | "glasses" | "pendant" | "cables")[];
 }
 
 const HAIR = {
@@ -185,6 +194,17 @@ export const OUTFITS: Record<OutfitId, Outfit> = {
     legs: { style: "boots", color: "#2a2d3b", band: "#2a2d3b", shoe: "#2a2d3b" },
     extras: ["pendant"],
   },
+  casual: {
+    id: "casual",
+    name: "Casual",
+    emoji: "👓",
+    hair: HAIR.rainbow,
+    top: { style: "bodysuit", from: "#2b2834", to: "#131118", accent: "#2f2b3a", shine: "#4a4658", sleeves: true },
+    jacket: null,
+    bottom: { style: "jeans", color: "#4f72a3", shade: "#36547e" },
+    legs: { style: "tights", color: "#4f72a3", band: "#4f72a3", shoe: "#f1eff7" },
+    extras: ["glasses", "pendant"],
+  },
   rain: {
     id: "rain",
     name: "Neon rain",
@@ -208,11 +228,11 @@ export function outfitById(id: string | undefined): Outfit {
 /** Which outfits suit each mood, with weights. */
 export const MOOD_OUTFITS: Record<Mood, [OutfitId, number][]> = {
   confident: [["edgerunner", 3], ["nightcity", 2], ["cyberdress", 2], ["techwear", 2], ["nightout", 1]],
-  focused: [["netrunner", 3], ["nightcity", 1], ["edgerunner", 1]],
+  focused: [["netrunner", 3], ["casual", 2], ["nightcity", 1], ["edgerunner", 1]],
   dreamy: [["moonlight", 3], ["techwear", 1], ["rain", 1]],
   sleepy: [["cozy", 3], ["moonlight", 1]],
   playful: [["nightout", 2], ["pool", 2], ["cyberdress", 1], ["edgerunner", 1]],
-  melancholy: [["rain", 3], ["cozy", 1]],
+  melancholy: [["rain", 3], ["casual", 2], ["cozy", 1]],
 };
 
 export const MOOD_INFO: Record<Mood, { emoji: string; greeting: string }> = {

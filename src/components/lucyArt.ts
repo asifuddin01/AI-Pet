@@ -125,7 +125,7 @@ function legLeft(o: Outfit): string {
       wear = `<path d="${THIGH_HIGH}" fill="url(#lucy-legwear)"/>
         <path d="M48.3 75 L59.1 75 L59 76.5 L48.6 76.6 Z" fill="${l.band}"/>
         <ellipse cx="54.4" cy="87" rx=".8" ry="2.4" fill="#ffffff" opacity=".12"/>`;
-      if (o.bottom.style === "shorts") {
+      if (o.bottom.style === "shorts" || o.bottom.style === "jeans") {
         wear += `<path d="M49.6 60.5 C49.2 65.5 49 70 49.3 75" stroke="${INK}" stroke-width=".55" fill="none"/>`;
       }
       break;
@@ -210,7 +210,7 @@ function body(o: Outfit): string {
 
   let bottom = "";
   const b = o.bottom;
-  if (t.style !== "dress" && b.style === "shorts") {
+  if (t.style !== "dress" && (b.style === "shorts" || b.style === "jeans")) {
     bottom = `<path d="${SHORTS}" fill="${b.color}"/>
       <path d="M60 62 L60 66.4 M49.4 66 C51 64.4 52.4 63.6 54 63.4 M70.6 66 C69 64.4 67.6 63.6 66 63.4" stroke="${b.shade}" stroke-width=".5" fill="none"/>`;
   } else if (t.style !== "dress" && b.style === "skirt") {
@@ -263,8 +263,9 @@ function armLeft(o: Outfit): string {
     const glove = o.extras.includes("circuits")
       ? `<path d="M45.4 55 L48.4 55.4 L47.8 62 L45.1 61.7 Z" fill="${o.top.to}"/><path d="M46.6 55.6 L46.4 61" stroke="${o.top.accent}" stroke-width=".35"/>`
       : "";
+    const fill = o.top.sleeves ? "url(#lucy-top)" : "url(#lucy-skin)";
     return `<path d="M51.1 38.4 C48.4 39.2 47.2 41.5 46.8 45 C46.1 50 45.4 56 45.3 62 L47.7 62.3 C48 57 48.6 51 49.4 46.5
-        C49.9 44 50.8 41.6 51.4 40 Z" fill="url(#lucy-skin)"/>${glove}${hand}`;
+        C49.9 44 50.8 41.6 51.4 40 Z" fill="${fill}"/>${glove}${hand}`;
   }
   switch (j.style) {
     case "hoodie":
@@ -332,6 +333,11 @@ function hairFront(o: Outfit): string {
   }
   if (o.extras.includes("moonclip")) {
     extras += `<path d="M68.2 8.2 A3 3 0 1 0 70.4 12.8 A2.3 2.3 0 1 1 68.2 8.2 Z" fill="#ffe68a" stroke="#e9c75a" stroke-width=".3"/>`;
+  }
+  if (o.extras.includes("glasses")) {
+    extras += `<g fill="#ffffff" fill-opacity=".12" stroke="${INK}" stroke-width=".5">
+        <circle cx="56.3" cy="21.7" r="2.9"/><circle cx="63.7" cy="21.7" r="2.9"/></g>
+      <path d="M59.2 21.2 Q60 20.6 60.8 21.2 M53.4 21.2 L51.6 20.6 M66.6 21.2 L68.4 20.6" stroke="${INK}" stroke-width=".45" fill="none"/>`;
   }
   if (o.extras.includes("sunglasses")) {
     extras += `<path d="M52.6 8.6 L58.6 8.2 L58.4 10.6 C57.8 11.8 54 11.8 53.2 10.6 Z M61.4 8.2 L67.4 8.6 L66.8 10.6 C66 11.8 62.2 11.8 61.6 10.6 Z"
