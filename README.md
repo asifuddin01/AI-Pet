@@ -1,9 +1,14 @@
-# 🤖 AI Pet
+# 🤖 AI Pet — Lucy
 
-A tiny, lightweight AI companion that lives on your macOS desktop. It floats above your windows,
-wanders around, and when you press **⌥P** it pops up next to whatever text you've selected to
-translate, explain, define, summarize, rewrite or fix it — or just chat. It can speak its answers
-with the built-in macOS voices.
+A tiny, lightweight AI companion that lives on your macOS desktop. **Lucy** (inspired by the
+netrunner from *Cyberpunk: Edgerunners*) floats above your windows, wanders around, and when you
+press **⌥P** she pops up next to whatever text you've selected to translate, explain, define,
+summarize, rewrite or fix it — or just chat. She speaks her answers with the built-in macOS
+voices, and changes clothes when her mood changes.
+
+Her look is swappable: the built-in drawing, **your own 3D VRM model**, or **anime clips /
+animated images** cut out with the included converter — see
+[Make her look like the real Lucy](#make-her-look-like-the-real-lucy).
 
 Built with **Tauri 2 + Rust + TypeScript** (no Electron, no frontend framework) following
 [`docs/BUILD_GUIDE.md`](docs/BUILD_GUIDE.md).
@@ -12,7 +17,7 @@ Built with **Tauri 2 + Rust + TypeScript** (no Electron, no frontend framework) 
 | --- | --- |
 | <img src="docs/screenshots/task-menu.png" width="330" alt="Task menu next to the pet"> | <img src="docs/screenshots/translate.png" width="330" alt="Streaming translation"> |
 
-<img src="docs/screenshots/poses.png" width="680" alt="Pet poses: idle, walk, thinking, talking, listening, error, sleep, happy, wave">
+<img src="docs/screenshots/poses.png" width="680" alt="Built-in look poses: thinking, talking, error, sleep, happy, wave, hair touch, glance, walk">
 
 ## Features
 
@@ -25,7 +30,10 @@ Built with **Tauri 2 + Rust + TypeScript** (no Electron, no frontend framework) 
 - **Any AI provider** — OpenAI, Anthropic (Claude), Ollama / LM Studio (local, no key), OpenRouter, or any OpenAI-compatible endpoint.
 - **Private by design** — nothing is read until you press the shortcut, nothing is sent until you pick an AI action, keys live in the Keychain, and selected text is never logged.
 - **Menu bar icon** + **right-click menu** for control even while the pet is hidden.
-- **Lightweight** — the pet sits completely still between occasional blinks; ~21 KB of gzipped JS; no work at all while hidden.
+- **Moods & wardrobe** — Lucy's mood (confident, focused, dreamy, sleepy, playful, melancholy) follows the time of day and how you use her; in *auto* mode she changes outfit and hair when it shifts (10 outfits, all fully clothed). Pick one yourself in Settings or the right-click menu.
+- **Her voice** — a calm, low, unhurried delivery on the best installed macOS voice (Premium/Enhanced first); pace and pitch follow her mood. Her replies have a light Night City flavour; utility tasks return clean results.
+- **Three looks** — built-in drawing, a **3D VRM model** (procedural idle/walk/talk/think/sleep animation, blinking, lip movement, hair physics, one model per outfit if you like), or **anime clips / animated images** per state.
+- **Lightweight** — the built-in look sits completely still between occasional blinks; ~33 KB of gzipped JS; the 3D engine loads only if you pick a 3D model; no work at all while hidden.
 
 ## Quick start (macOS 13 Ventura or later)
 
@@ -120,6 +128,51 @@ xattr -cr "/Applications/AI Pet.app"
 Translation in **Auto** mode: Bangla (and other non-English text) → English, English → your
 chosen language (Bangla by default). Pick a fixed target in Settings if you prefer.
 
+## Make her look like the real Lucy
+
+The built-in look is a small drawing. For Lucy as she looks on screen, bring your own art — it
+stays on your Mac (in the app's data folder) and is never uploaded or committed.
+
+<img src="docs/screenshots/outfits.png" width="680" alt="Built-in outfits">
+
+### Option A — 3D model (moves, walks, talks, changes outfits)
+
+1. Install **[VRoid Studio](https://vroid.com/en/studio)** (free) and create her: pink-white
+   blunt bob with lavender/rainbow tips, violet eyes, black high-neck bodysuit, white cropped
+   jacket, black thigh-high boots. Save a variant per outfit if you want her to change clothes.
+2. **File → Export → Export as VRM** (VRM 0.x or 1.0 both work).
+3. **Settings → Character → Look: 3D model (VRM) → Import .vrm…**. With several models,
+   *Models per outfit* maps each outfit to one; mood changes then swap the model.
+
+Models from other tools (e.g. VRM exports from Blender/Unity) work too. Respect each model's
+licence terms.
+
+### Option B — anime clips / animated images
+
+Give each state its own short loop: **Idle** (required), Walking, Talking, Thinking, Listening,
+Sleeping, Confused, Happy, Waving. Accepted: animated WebP/GIF/PNG, or WebM/MP4/MOV
+(transparent WebM/MOV float on the desktop; others show their background).
+
+To cut her out of a video you have, use the converter (runs locally, anime-trained background
+removal):
+
+```bash
+python3 -m venv .venv-sprites && source .venv-sprites/bin/activate
+pip install -r scripts/requirements-sprites.txt
+python3 scripts/make_sprite.py clip.mov idle.webp --start 5.4 --end 6.6 --pingpong
+```
+
+Then **Settings → Character → Look: Anime clips / images → Idle → Choose…**. Tips:
+
+- Pick 1–2 s where the camera is still and she's shown to the knees or full body; close-ups
+  become a floating bust (edges the shot cuts off are faded, the top of her head isn't).
+- One shot per clip: frames where the cut-out fails (motion blur, scene cuts) are dropped
+  automatically, but a range inside one shot works best. `--crop x,y,w,h` limits it to part of
+  the frame; `--height` sets the size (360 px default); `--fps` 8–15 keeps files small.
+- `--pingpong` plays forward then back for a seamless idle loop.
+- Use footage you have the right to use, for your own desktop, and keep the output files out of
+  the repository.
+
 ## Permissions
 
 Only **Accessibility** (to read the selection when you press ⌥P, and to post Cmd+C for the
@@ -130,16 +183,19 @@ reasoning: [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
 
 ```text
 src/                      TypeScript UI (vanilla, no framework)
-  components/             Pet (CSS robot), ChatBubble, TaskMenu, InputBox, SettingsPanel, richText
-  pet/                    PetState (FSM), AnimationController, RoamingController, PetPosition, PetController
+  components/             Pet + lucyArt (built-in look), VrmPet (3D), SpritePet (clips), CharacterView,
+                          ChatBubble, TaskMenu, InputBox, SettingsPanel, richText
+  pet/                    PetState (FSM), AnimationController, RoamingController, PetPosition,
+                          Wardrobe (moods/outfits), PetController
   ai/                     AIProvider, NativeAIProvider, PromptBuilder, TaskRunner, tasks, language
   services/               native IPC, SelectedText, Clipboard, TTS, Settings, speech helpers
   styles/                 pet.css, settings.css
 src-tauri/src/            Rust native layer
   hotkey.rs  accessibility.rs  clipboard.rs  selection.rs  screens.rs  window.rs
-  commands.rs  settings.rs  secrets.rs  tray.rs  tts.rs  autostart.rs  macos.rs
+  commands.rs  settings.rs  secrets.rs  tray.rs  tts.rs  autostart.rs  macos.rs  characters.rs
   ai/  openai.rs  anthropic.rs  sse.rs
 src-tauri/capabilities/   per-window IPC allow-lists (pet vs settings)
+scripts/                  setup-macos.sh, make_sprite.py (clip → transparent animated WebP)
 docs/                     BUILD_GUIDE (spec), ARCHITECTURE, PERMISSIONS, TESTING, DISTRIBUTION
 ```
 
@@ -148,9 +204,9 @@ More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Development
 
 ```bash
-npm test               # 65 TypeScript unit tests (Vitest)
+npm test               # 80 TypeScript unit tests (Vitest)
 npm run typecheck
-cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings   # 32 Rust tests
+cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings   # 34 Rust tests
 ```
 
 Manual and performance test checklists: [`docs/TESTING.md`](docs/TESTING.md). Logs:

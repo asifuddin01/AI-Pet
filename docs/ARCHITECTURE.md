@@ -68,7 +68,29 @@ collection behaviour `CanJoinAllSpaces | Stationary | IgnoresCycle | FullScreenA
 `OFF → IDLE ⇄ WALKING`, `IDLE → SLEEPING`, `→ INTERACTING → THINKING → SPEAKING → INTERACTING/IDLE`,
 `→ ERROR → IDLE/INTERACTING`. Illegal transitions are rejected. Animations: idle (brief float,
 then still), walk, thinking, talking, listening, error, sleep, plus one-shot gestures (blink,
-look, hop, wave, happy, snore).
+look, glance, hair touch, hop, wave, happy, snore, outfit change).
+
+## Characters, moods and wardrobe
+
+`PetController` talks to the character only through `CharacterView` (`src/components/CharacterView.ts`),
+so the look can be swapped at runtime (Settings → Character):
+
+| Renderer | File | How it animates |
+| --- | --- | --- |
+| Built-in drawing | `Pet.ts` + `lucyArt.ts` | layered SVG parts moved by CSS transforms; outfits re-render the parts |
+| 3D model | `VrmPet.ts` | three.js + `@pixiv/three-vrm`, lazily imported; procedural bone animation per state/gesture, VRM expressions (mood, blink, mouth), spring-bone hair physics; 12–30 fps and stopped while hidden |
+| Clips / images | `SpritePet.ts` | one animated WebP/GIF/APNG or muted looping video per state, falling back to idle |
+
+User files are imported from the Settings window as a raw IPC body (`import_character_file`,
+metadata in headers), validated in `characters.rs` (extension, size, glTF magic for VRM, flat
+sanitized names) and stored under the app data folder in `characters/{vrm,sprites}`. The pet
+window can only list and read them; it gets bytes back as an `ArrayBuffer` and shows them via
+`blob:` URLs (allowed by the CSP for images/media only). `characters-changed` tells the pet to
+rebuild. If a look fails to load, the pet falls back to the built-in drawing and says why.
+
+`Wardrobe.ts` holds the moods, outfits and the pure decision functions: `decideMood` (time of
+day + recent activity from `MoodTracker`), `pickOutfit` (weighted per mood, never the current
+one) and `voiceFor` (speech rate/pitch per mood). The mood also shapes the chat system prompt.
 
 ## Adding a task (§35, §63)
 
@@ -78,7 +100,8 @@ register it with `TaskRunner.register()`. The bubble picks it up automatically.
 ## Security (§34)
 
 - IPC: every app command has an auto-generated permission (`build.rs`); the pet window can't
-  manage keys, the settings window can't move the pet or stream AI.
+  manage keys or import/delete character files, the settings window can't move the pet or
+  stream AI.
 - Arguments are validated in Rust (rect sanity, message roles/sizes, URL scheme/host, voice names).
 - No shell: the only processes spawned are `/usr/bin/say` (text via stdin) and `/usr/bin/open`
   with a fixed System Settings URL. AI output is only ever rendered as text.

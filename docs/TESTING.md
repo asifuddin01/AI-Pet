@@ -3,10 +3,10 @@
 ## Automated
 
 ```bash
-npm test                                   # Vitest — 65 tests
+npm test                                   # Vitest — 80 tests
 npm run typecheck
 cd src-tauri
-cargo test                                 # 32 tests
+cargo test                                 # 34 tests
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -21,6 +21,8 @@ cargo clippy --all-targets -- -D warnings
 | Settings | `src-tauri/src/settings.rs` — defaults, clamping, camelCase wire format; `secrets.rs` key validation |
 | Hotkeys | `src-tauri/src/hotkey.rs` — parsing, modifier requirement; `src/util/shortcut.test.ts` |
 | Language / speech | `src/ai/language.test.ts`, `src/services/speech.test.ts` |
+| Moods / wardrobe / voice | `src/pet/Wardrobe.test.ts` — mood decisions, outfit picks, mood tracker, voice choice |
+| Characters | `src/components/SpritePet.test.ts` — state fallbacks; `src-tauri/src/characters.rs` — name sanitizing, asset kinds |
 
 CI (`.github/workflows/ci.yml`) runs all of the above on Linux and again on macOS, then builds the
 universal `.dmg`.
@@ -55,6 +57,15 @@ Chrome · Safari · VS Code · Terminal · TextEdit · Notes · Preview (PDF) ·
       Wi-Fi off → "I couldn't reach my AI brain"; the pet returns to idle in every case.
 - [ ] No provider configured → "Connect an AI provider to use this feature" + Settings button.
 - [ ] *Allow AI requests* off → no network traffic (check with Little Snitch / `nettop`).
+
+### Character
+- [ ] Settings → Character → *3D model*: import a `.vrm` from VRoid Studio; she appears within a
+      few seconds, blinks, breathes, walks when roaming, talks while answering, waves hello.
+- [ ] With two models mapped to different outfits, *Change outfit* swaps the model.
+- [ ] *Anime clips / images*: import an Idle `.webp` (from `scripts/make_sprite.py`) and a Talking
+      clip; the talking one plays while she answers.
+- [ ] Remove the Idle file: the pet falls back to the built-in look and explains why.
+- [ ] Hidden pet (⌥⇧P) with the 3D look: CPU drops to ~0% (render loop stopped).
 
 ### Voice
 - [ ] Answers are spoken, starting before the text finishes; mouth animates while speaking.
