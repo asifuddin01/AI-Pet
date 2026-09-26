@@ -6,9 +6,10 @@ talk, ...). This script cuts the character out of a clip with an anime-trained
 background-removal model, crops to her, and writes a looping animated WebP you can
 import in Settings -> Character.
 
-    python3 -m venv .venv-sprites && . .venv-sprites/bin/activate
-    pip install -r scripts/requirements-sprites.txt
-    python3 scripts/make_sprite.py clip.mov idle.webp --start 5.4 --end 6.6
+    ./scripts/make_sprite.sh clip.mov idle.webp --start 5.4 --end 6.6
+
+(`make_sprite.sh` sets up a private Python environment with the dependencies on first run.)
+Use --model u2net_human_seg for realistic or 3D-rendered footage.
 
 Everything runs locally. Use footage you have the right to use; the outputs are
 for your own desktop and don't belong in the repository.
@@ -62,7 +63,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument("--pingpong", action="store_true", help="play forward then backward for a seamless loop")
     p.add_argument("--quality", type=int, default=82, help="WebP quality 1-100 (default 82)")
-    p.add_argument("--model", default="isnet-anime", help="rembg model (default isnet-anime)")
+    p.add_argument(
+        "--model",
+        default="isnet-anime",
+        help="rembg model: isnet-anime (default, anime) or u2net_human_seg (realistic / 3D renders)",
+    )
     p.add_argument("--frames-dir", type=Path, default=None, help="also save each cut-out frame as PNG here")
     args = p.parse_args(argv)
     if args.end is None:

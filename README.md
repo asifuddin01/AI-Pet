@@ -157,10 +157,14 @@ To cut her out of a video you have, use the converter (runs locally, anime-train
 removal):
 
 ```bash
-python3 -m venv .venv-sprites && source .venv-sprites/bin/activate
-pip install -r scripts/requirements-sprites.txt
-python3 scripts/make_sprite.py clip.mov idle.webp --start 5.4 --end 6.6 --pingpong
+cd ~/AI/PET && git pull            # get the latest code first
+./scripts/make_sprite.sh ~/Downloads/lucy.mp4 ~/Desktop/idle.webp --start 5.4 --end 6.6 --pingpong
 ```
+
+The first run sets up a private Python environment in `.venv-sprites` (a few minutes; it
+doesn't touch your system Python or need `pip`). Use your video's real path and the seconds you
+want. For realistic / 3D-rendered footage add `--model u2net_human_seg`; the default
+`isnet-anime` suits anime.
 
 Then **Settings → Character → Look: Anime clips / images → Idle → Choose…**. Tips:
 
