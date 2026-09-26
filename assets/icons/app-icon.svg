@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2B2A6B"/>
+      <stop offset="1" stop-color="#141236"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.55">
+      <stop offset="0" stop-color="#6D7BFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#6D7BFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#7FA8FF"/>
+      <stop offset="0.55" stop-color="#6C6CF6"/>
+      <stop offset="1" stop-color="#8B54E8"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1F48"/>
+      <stop offset="1" stop-color="#0E1030"/>
+    </linearGradient>
+    <linearGradient id="leg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6A63EE"/>
+      <stop offset="1" stop-color="#5140C9"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#glow)"/>
+  <!-- shadow -->
+  <ellipse cx="512" cy="846" rx="190" ry="26" fill="#000" opacity="0.28"/>
+  <!-- legs -->
+  <rect x="408" y="742" width="64" height="96" rx="32" fill="url(#leg)"/>
+  <rect x="552" y="742" width="64" height="96" rx="32" fill="url(#leg)"/>
+  <!-- arms -->
+  <rect x="222" y="520" width="70" height="150" rx="35" fill="#6E63F0" transform="rotate(14 257 595)"/>
+  <rect x="732" y="520" width="70" height="150" rx="35" fill="#7E5CEB" transform="rotate(-14 767 595)"/>
+  <!-- antenna -->
+  <rect x="500" y="196" width="24" height="96" rx="12" fill="#7E8CFF"/>
+  <circle cx="512" cy="190" r="38" fill="#7DF3FF"/>
+  <circle cx="500" cy="178" r="12" fill="#FFFFFF" opacity="0.8"/>
+  <!-- body -->
+  <rect x="262" y="280" width="500" height="490" rx="210" fill="url(#body)"/>
+  <!-- ear pods -->
+  <rect x="236" y="418" width="44" height="120" rx="22" fill="#8C7BFF"/>
+  <rect x="744" y="418" width="44" height="120" rx="22" fill="#8C7BFF"/>
+  <!-- face screen -->
+  <rect x="318" y="360" width="388" height="262" rx="120" fill="url(#screen)"/>
+  <!-- eyes -->
+  <rect x="404" y="430" width="58" height="96" rx="29" fill="#7DF3FF"/>
+  <rect x="562" y="430" width="58" height="96" rx="29" fill="#7DF3FF"/>
+  <circle cx="422" cy="452" r="10" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="580" cy="452" r="10" fill="#FFFFFF" opacity="0.9"/>
+  <!-- smile -->
+  <path d="M478 560 Q512 588 546 560" stroke="#7DF3FF" stroke-width="12" fill="none" stroke-linecap="round"/>
+  <!-- cheeks -->
+  <ellipse cx="370" cy="566" rx="24" ry="14" fill="#FF8FD8" opacity="0.45"/>
+  <ellipse cx="654" cy="566" rx="24" ry="14" fill="#FF8FD8" opacity="0.45"/>
+  <!-- gloss -->
+  <path d="M330 350 Q360 300 440 296" stroke="#FFFFFF" stroke-width="20" fill="none" stroke-linecap="round" opacity="0.35"/>
+</svg>

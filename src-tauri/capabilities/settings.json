@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings-window",
+  "description": "The Settings window: read/write settings, manage the API key (write-only), test the connection.",
+  "windows": ["settings"],
+  "permissions": [
+    "core:event:default",
+    "allow-get-settings",
+    "allow-save-settings",
+    "allow-get-app-status",
+    "allow-set-api-key",
+    "allow-delete-api-key",
+    "allow-ai-test-connection",
+    "allow-check-accessibility-permission",
+    "allow-request-accessibility-permission",
+    "allow-open-accessibility-settings",
+    "allow-tts-speak",
+    "allow-tts-stop",
+    "allow-app-log"
+  ]
+}

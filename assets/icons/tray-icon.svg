@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">
+  <!-- Template image: black + alpha only; macOS tints it for light/dark menu bars. -->
+  <defs>
+    <mask id="face">
+      <rect width="44" height="44" fill="#fff"/>
+      <rect x="15" y="17" width="4.5" height="8" rx="2.25" fill="#000"/>
+      <rect x="24.5" y="17" width="4.5" height="8" rx="2.25" fill="#000"/>
+    </mask>
+  </defs>
+  <g fill="#000">
+    <rect x="21" y="3" width="2.4" height="7" rx="1.2"/>
+    <circle cx="22.2" cy="4" r="3"/>
+    <rect x="8" y="9.5" width="28" height="26" rx="12" mask="url(#face)"/>
+    <rect x="15" y="35" width="4.5" height="6" rx="2.25"/>
+    <rect x="24.5" y="35" width="4.5" height="6" rx="2.25"/>
+  </g>
+</svg>
