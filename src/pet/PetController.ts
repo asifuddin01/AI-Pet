@@ -42,15 +42,19 @@ import {
   type BubbleSide,
   type ExpandedLayout,
 } from "./PetPosition";
+import { PatDetector } from "./pat";
 import { PetStateMachine } from "./PetState";
 import { RoamingController, walkDurationMs } from "./RoamingController";
 import {
   decideMood,
+  HELLO_LINES,
   MOOD_INFO,
   MOOD_OUTFITS,
+  moodLine,
   MoodTracker,
   OUTFIT_IDS,
   outfitById,
+  PAT_LINES,
   pickOutfit,
   voiceFor,
   type Mood,
@@ -82,6 +86,9 @@ const CHECK_IN_MINUTES: Record<Settings["checkInEvery"], [number, number]> = {
 };
 /** A check-in nobody answers closes itself. */
 const CHECK_IN_SHOW_MS = 30_000;
+const HELLO_SHOW_MS = 8_000;
+/** Pats closer together than this get one reaction. */
+const PAT_COOLDOWN_MS = 4_000;
 const HELP_LINES = [
   "Need a hand with anything, choom?",
   "Stuck on something? I can translate, explain or keep time for you.",
@@ -188,6 +195,8 @@ export class PetController {
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
   private refitTimer: ReturnType<typeof setTimeout> | null = null;
   private lastInteraction = Date.now();
+  private readonly pats = new PatDetector();
+  private lastPat = 0;
   private lastPositionSave = 0;
   private enabling: Promise<void> | null = null;
   private warnedHotkeys = false;
@@ -268,9 +277,9 @@ export class PetController {
       },
       moveTo: (target, ms) => this.moveTo(target, ms),
       stopMotion: () => this.stopMotion(),
-      onWalkStart: (direction) => {
-        this.character.setFacing(direction);
-        this.anim.setFloating(this.settings.get().roamArea === "float");
+      onWalkStart: (dx, dy, floating) => {
+        this.character.setFacing(dx, dy);
+        this.anim.setFloating(floating);
         this.fsm.transition("WALKING");
       },
       onWalkEnd: (position) => {
@@ -294,6 +303,9 @@ export class PetController {
       on<{ id: number }>("pet-arrived", ({ id }) => this.settleMotion(id, true)),
       on("open-chat", () => void this.openChat()),
       on<{ pressed: boolean; cursor: Point }>("talk-hotkey", (e) => void this.onTalkKey(e.pressed, e.cursor)),
+      on<Point>("pet-hover", (p) => {
+        if (this.pats.push(p, Date.now())) this.onPetted();
+      }),
     ]);
     this.settings.onChange((next, prev) => this.onSettingsChanged(next, prev));
     this.bindPointer(this.character.el);
@@ -388,8 +400,8 @@ export class PetController {
         this.pendingNotice = null;
         await this.showNotice(title, text, true);
       } else {
-        this.anim.gesture("wave");
-        this.scheduleRoamResume(1500);
+        await this.showCheckIn("help", moodLine(HELLO_LINES, this.mood, s.userName));
+        this.closeCheckInLater(HELLO_SHOW_MS);
       }
       this.syncWake();
     })();
@@ -1244,7 +1256,7 @@ export class PetController {
     if (!cursor || !screen) return;
     const target = clampPet({ x: cursor.x - this.size / 2, y: cursor.y - this.size * 0.2 }, this.size, screen.visibleFrame);
     const from = this.petPos;
-    this.character.setFacing(target.x < from.x ? "left" : "right");
+    this.character.setFacing(target.x - from.x, target.y - from.y);
     this.anim.setFloating(this.settings.get().roamArea === "float");
     this.fsm.transition("WALKING");
     const arrived = await this.moveTo(target, walkDurationMs(from, target, this.settings.get().animationSpeed, true));
@@ -1687,6 +1699,21 @@ export class PetController {
     this.lastInteraction = Date.now();
     this.tracker.record("interaction");
     if (this.fsm.is("SLEEPING")) this.wake();
+  }
+
+  /** You stroked her with the cursor: she leans into it and answers in her mood. */
+  private onPetted(): void {
+    if (this.fsm.is("OFF") || this.drag || this.voice.active || Date.now() - this.lastPat < PAT_COOLDOWN_MS) return;
+    this.lastPat = Date.now();
+    const mood = this.fsm.is("SLEEPING") ? "sleepy" : this.mood;
+    this.touch();
+    if (!this.expanded) {
+      this.stopRoaming();
+      this.scheduleRoamResume(6000);
+    }
+    this.anim.gesture("pat");
+    if (mood === "playful") this.anim.gesture("happy");
+    this.say({ title: "", text: moodLine(PAT_LINES, mood, this.settings.get().userName) });
   }
 
   private checkSleep(): void {

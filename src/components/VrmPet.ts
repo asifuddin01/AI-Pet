@@ -44,13 +44,27 @@ const MOOD_LID: Record<Mood, number> = {
 
 /** Base facial expression per mood (VRM preset name → weight). */
 const MOOD_FACE: Record<Mood, Partial<Record<string, number>>> = {
-  confident: { happy: 0.12 },
+  confident: { happy: 0.3 },
   focused: {},
-  dreamy: { relaxed: 0.4 },
-  sleepy: { relaxed: 0.45 },
-  playful: { happy: 0.3 },
-  melancholy: { sad: 0.3 },
+  dreamy: { relaxed: 0.6 },
+  sleepy: { relaxed: 0.6 },
+  playful: { happy: 0.6 },
+  melancholy: { sad: 0.6 },
 };
+
+/** Mood in her body while she stands around: head (radians) and a forward hunch. */
+const MOOD_POSE: Record<Mood, { head: Rot; hunch: number }> = {
+  confident: { head: { x: -0.08, y: 0, z: 0.05 }, hunch: -0.05 }, // chin up, chest out
+  focused: { head: { x: 0.08, y: 0, z: 0 }, hunch: 0.04 },
+  dreamy: { head: { x: -0.14, y: 0.18, z: 0.16 }, hunch: -0.02 }, // gazing up and away
+  sleepy: { head: { x: 0.24, y: 0, z: 0.12 }, hunch: 0.1 }, // drooping
+  playful: { head: { x: -0.04, y: 0, z: 0.2 }, hunch: 0 }, // head tilt
+  melancholy: { head: { x: 0.3, y: -0.12, z: -0.06 }, hunch: 0.12 }, // head down, hunched
+};
+
+/** Idle this long (seconds) and she sits down; hips drop this far (metres). */
+const SIT_AFTER = 8;
+const SIT_DROP = 0.34;
 
 /**
  * A 3D character from a VRM model (e.g. a Lucy made in VRoid Studio), rendered with
@@ -74,8 +88,17 @@ export class VrmPet implements CharacterView {
   private outfit: Outfit;
   private mood: Mood = "confident";
   private anim: Animation = "idle";
-  private facing = 1;
+  /** Body yaw toward her travel direction (0 faces the viewer, ±π/2 profile, π her back). */
+  private heading = 0;
   private yaw = 0;
+  private idleYaw = 0;
+  private nextTurn = 12;
+  private idleFor = 0;
+  private sit = 0;
+  private sip = 0;
+  /** Her stool and coffee mug while she sits (drawn here; the model has neither). */
+  private readonly cup = makeCup();
+  private readonly stool = makeStool();
   private speed = 1;
   private size = 140;
   private paused = true;
@@ -132,6 +155,7 @@ export class VrmPet implements CharacterView {
     const key = new THREE.DirectionalLight(0xffffff, Math.PI * 0.9);
     key.position.set(1, 1.6, 2.2);
     this.scene.add(key, new THREE.AmbientLight(0xffffff, 0.9), this.root, this.lookTarget);
+    this.root.add(this.cup, this.stool);
     this.place(0, 0, this.size);
     void this.load(this.modelFor(outfit));
   }
@@ -181,8 +205,9 @@ export class VrmPet implements CharacterView {
     }
   }
 
-  setFacing(direction: "left" | "right"): void {
-    this.facing = direction === "left" ? -1 : 1;
+  setFacing(dx: number, dy: number): void {
+    // Up the screen reads as "away", so she shows her side or back as she travels.
+    if (dx || dy) this.heading = Math.atan2(dx, dy);
   }
 
   setScale(): void {
@@ -214,8 +239,35 @@ export class VrmPet implements CharacterView {
     this.setPaused(true);
     this.loadToken++;
     this.unloadModel();
+    VRMUtils.deepDispose(this.cup);
+    VRMUtils.deepDispose(this.stool);
     this.renderer.dispose();
     this.el.remove();
+  }
+
+  /** Stool under her hips (legs to the floor); mug upright in her right hand, tipped as she sips. */
+  private placeProps(): void {
+    const hips = this.vrm?.humanoid.getRawBoneNode("hips");
+    this.stool.visible = !!hips && this.sit > 0.05;
+    if (hips && this.stool.visible) {
+      const p = this.root.worldToLocal(hips.getWorldPosition(new THREE.Vector3()));
+      const top = Math.max(0.1, p.y - 0.09);
+      this.stool.position.set(p.x, top, p.z - 0.02);
+      const legs = this.stool.getObjectByName("legs")!;
+      legs.scale.y = top - STOOL_SEAT;
+      legs.position.y = -STOOL_SEAT;
+      this.stool.scale.setScalar(Math.min(1, this.sit / 0.6));
+    }
+    const hand = this.vrm?.humanoid.getRawBoneNode("rightHand");
+    const finger = this.vrm?.humanoid.getRawBoneNode("rightMiddleProximal");
+    this.cup.visible = !!hand && !!finger && this.sit > 0.6;
+    if (!this.cup.visible) return;
+    const h = hand!.getWorldPosition(new THREE.Vector3());
+    const f = finger!.getWorldPosition(new THREE.Vector3());
+    this.cup.position.copy(this.root.worldToLocal(h.lerp(f, 0.8)));
+    this.cup.position.y -= 0.03;
+    this.cup.rotation.set(-0.8 * this.sip, 0, 0);
+    this.cup.scale.setScalar(Math.min(1, (this.sit - 0.6) / 0.3));
   }
 
   // ------------------------------------------------------------------ clothing layers
@@ -331,6 +383,7 @@ export class VrmPet implements CharacterView {
       this.time += dt * this.speed;
       this.animate(dt * this.speed);
       this.vrm.update(dt);
+      this.placeProps();
     }
     this.renderer.render(this.scene, this.camera);
   }
@@ -366,9 +419,20 @@ export class VrmPet implements CharacterView {
       pose.set(b, { x: cur.x + (r.x ?? 0), y: cur.y + (r.y ?? 0), z: cur.z + (r.z ?? 0) });
     };
 
-    // Turn slightly toward where she's walking; face the viewer otherwise.
-    const targetYaw = a === "walk" ? this.facing * 0.55 : a === "float" ? this.facing * 0.3 : 0;
-    this.yaw = approach(this.yaw, targetYaw, 5, dt);
+    // Face where she's going; while idle, now and then turn away (three-quarter, profile,
+    // or her back) for a few seconds; face the viewer whenever she's engaged with you.
+    if (t >= this.nextTurn) {
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      this.idleYaw = this.idleYaw ? 0 : sign * [0.5, 0.6, 1.25, Math.PI][Math.floor(Math.random() * 4)];
+      this.nextTurn = t + (this.idleYaw ? 3 + Math.random() * 4 : 10 + Math.random() * 15);
+    }
+    // A long rest: she sits down (on an invisible ledge, or in the air while floating).
+    this.idleFor = a === "idle" ? this.idleFor + dt : 0;
+    const sit = (this.sit = approach(this.sit, this.idleFor > SIT_AFTER ? 1 : 0, 2.5, dt));
+    const idleYaw = sit > 0.5 ? Math.max(-0.6, Math.min(0.6, this.idleYaw)) : this.idleYaw;
+    const targetYaw = a === "walk" || a === "float" ? this.heading : a === "idle" ? idleYaw : 0;
+    const turn = Math.atan2(Math.sin(targetYaw - this.yaw), Math.cos(targetYaw - this.yaw)); // shortest way round
+    this.yaw = approach(this.yaw, this.yaw + turn, 4, dt);
     this.root.rotation.y = this.yaw;
 
     // Weight shifts from one leg to the other every so often (contrapposto).
@@ -377,14 +441,14 @@ export class VrmPet implements CharacterView {
       this.nextWeightSwap = t + 7 + Math.random() * 9;
     }
     this.weight = approach(this.weight, this.weightSide, 1.6, dt);
-    const w = a === "walk" || a === "float" ? 0 : this.weight; // +1 = weight on her left leg
+    const w = a === "walk" || a === "float" ? 0 : this.weight * (1 - sit); // +1 = weight on her left leg
     // Hand-on-hip stance now and then when she's feeling bold.
     if (t >= this.nextStance) {
       const bold = this.mood === "confident" || this.mood === "playful";
       this.handOnHip = !this.handOnHip && Math.random() < (bold ? 0.7 : 0.35);
       this.nextStance = t + 9 + Math.random() * 14;
     }
-    const hipHand = approach(this.hipHand, this.handOnHip && (a === "idle" || a === "listening" || a === "talking") ? 1 : 0, 2.2, dt);
+    const hipHand = approach(this.hipHand, this.handOnHip && sit < 0.5 && (a === "idle" || a === "listening" || a === "talking") ? 1 : 0, 2.2, dt);
     this.hipHand = hipHand;
 
     const breath = Math.sin(t * ((2 * Math.PI) / (a === "sleep" ? 4.6 : 3.6)));
@@ -481,6 +545,38 @@ export class VrmPet implements CharacterView {
       rHand = mix(rHand, { x: 0, y: 0, z: -0.25 + Math.sin(t * 3.1) * 0.15 }, gest);
     }
 
+    // her mood, in her body
+    if (a === "idle") {
+      const m = MOOD_POSE[this.mood];
+      head = { x: head.x + m.head.x, y: head.y + m.head.y, z: head.z + m.head.z };
+      add("spine", { x: m.hunch });
+      add("chest", { x: m.hunch * 0.6 });
+      if (this.mood === "playful") hipsOffset.y += Math.abs(Math.sin(t * 2.2)) * 0.012; // bouncy
+    }
+
+    // sitting: thighs forward, knees bent, hands resting on her lap
+    if (sit > 0.001) {
+      const to = (b: VRMHumanBoneName, r: Rot) => pose.set(b, mix(pose.get(b) ?? { x: 0, y: 0, z: 0 }, r, sit));
+      to("hips", { x: 0, y: 0, z: 0 });
+      to("leftUpperLeg", { x: -1.5, y: -0.06, z: -0.05 });
+      to("rightUpperLeg", { x: -1.4, y: 0.08, z: 0.06 });
+      to("leftLowerLeg", { x: 1.55, y: 0, z: 0 });
+      to("rightLowerLeg", { x: 1.3, y: 0, z: 0 });
+      to("leftFoot", { x: 0.2, y: 0, z: 0 });
+      to("rightFoot", { x: 0.3, y: 0, z: 0 });
+      add("spine", { x: -0.04 * sit });
+      lUpper = mix(lUpper, { x: -0.1, y: 0, z: -1.25 }, sit);
+      lLower = mix(lLower, { x: 0, y: -0.8, z: 0 }, sit);
+      hipsOffset.y -= SIT_DROP * sit;
+      // coffee: held in front of her, a slow sip every several seconds
+      const phase = (t % 9) / 9;
+      const sip = (this.sip = sit > 0.9 && phase < 0.3 ? envelope(phase / 0.3) : 0);
+      rUpper = mix(rUpper, mix({ x: -0.3, y: -0.1, z: 1.25 }, { x: -0.75, y: 0.3, z: 1.2 }, sip), sit);
+      rLower = mix(rLower, mix({ x: 0, y: 2.0, z: 0 }, { x: 0, y: 2.35, z: 0 }, sip), sit);
+      rHand = mix(rHand, { x: 0, y: 0, z: 0 }, sit);
+      head = { ...head, x: head.x + 0.08 * sip };
+    }
+
     // hand on the hip (left arm), elbow out
     if (hipHand > 0.001) {
       lUpper = mix(lUpper, { x: 0.6, y: -0.3, z: -0.5 }, hipHand);
@@ -502,6 +598,8 @@ export class VrmPet implements CharacterView {
       rLower = mix(rLower, { x: 0, y: 0, z: -2.4 }, hair);
       head = mix(head, { x: 0.04, y: -0.12, z: 0.1 }, hair);
     }
+    const pat = this.gestureWeight("pat");
+    if (pat) head = mix(head, { x: -0.1, y: 0, z: 0.24 + Math.sin(t * 5) * 0.05 }, pat); // leans into your hand
     const glance = this.gestureWeight("glance");
     if (glance) head = mix(head, { x: -0.03, y: 0.55, z: 0.06 }, glance);
     const lookL = this.gestureWeight("look-left");
@@ -567,8 +665,10 @@ export class VrmPet implements CharacterView {
     if (a === "error") target.set("sad", 0.8);
     if (a === "listening") target.set("surprised", 0.3);
     if (a === "sleep") target.set("relaxed", 0.5);
-    const happy = Math.max(this.gestureWeight("happy"), this.gestureWeight("wave") * 0.6);
+    const pat = this.gestureWeight("pat");
+    const happy = Math.max(this.gestureWeight("happy"), this.gestureWeight("wave") * 0.6, pat * 0.8);
     if (happy) target.set("happy", Math.max(target.get("happy") ?? 0, happy));
+    if (pat) target.set("sad", (target.get("sad") ?? 0) * (1 - pat));
 
     // Blink every few seconds; eyes stay shut while asleep.
     let blink = 0;
@@ -620,6 +720,58 @@ function mix(a: Rot, b: Rot, w: number): Rot {
 }
 
 const tmpEuler = new THREE.Euler();
+
+const STOOL_SEAT = 0.05;
+
+/** A round bar stool: dark padded seat with a neon rim, four thin metal legs (scaled to reach the floor). */
+function makeStool(): THREE.Group {
+  const stool = new THREE.Group();
+  const seat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.19, 0.17, STOOL_SEAT, 28),
+    new THREE.MeshStandardMaterial({ color: 0x24222c, roughness: 0.6 }),
+  );
+  seat.position.y = -STOOL_SEAT / 2;
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.19, 0.006, 8, 40),
+    new THREE.MeshBasicMaterial({ color: 0xff3fa4 }),
+  );
+  rim.rotation.x = Math.PI / 2;
+  const metal = new THREE.MeshStandardMaterial({ color: 0x9aa0aa, metalness: 0.7, roughness: 0.35 });
+  const legs = new THREE.Group();
+  legs.name = "legs";
+  for (let i = 0; i < 4; i++) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 1, 8), metal);
+    const a = Math.PI / 4 + (i * Math.PI) / 2;
+    leg.position.set(Math.cos(a) * 0.13, -0.5, Math.sin(a) * 0.13);
+    legs.add(leg);
+  }
+  const foot = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.008, 8, 32), metal);
+  foot.rotation.x = Math.PI / 2;
+  foot.position.y = -0.62; // footrest ring, part-way down the (unit-height) legs
+  legs.add(foot);
+  stool.add(seat, rim, legs);
+  stool.visible = false;
+  return stool;
+}
+
+/** A small mug (about 8 cm tall): white body, coffee on top, a handle. */
+function makeCup(): THREE.Group {
+  const cup = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: 0xf3eee6, roughness: 0.5 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.03, 0.082, 20), white);
+  const coffee = new THREE.Mesh(
+    new THREE.CircleGeometry(0.031, 20),
+    new THREE.MeshStandardMaterial({ color: 0x4a2c1c, roughness: 0.3 }),
+  );
+  coffee.rotation.x = -Math.PI / 2;
+  coffee.position.y = 0.036;
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.006, 8, 16, Math.PI), white);
+  handle.rotation.z = -Math.PI / 2;
+  handle.position.x = 0.034;
+  cup.add(body, coffee, handle);
+  cup.visible = false;
+  return cup;
+}
 const tmpQuat = new THREE.Quaternion();
 
 /** Smooth, irregular motion in about -1..1 (sum of incommensurate sines). */

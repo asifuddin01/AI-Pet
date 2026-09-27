@@ -516,8 +516,11 @@ export class SettingsPanel {
       ["auto", "Let Lucy choose (by mood)"],
       ...OUTFIT_IDS.map((id): [string, string] => [id, `${OUTFITS[id].emoji}  ${OUTFITS[id].name}`]),
     ];
+    const name = h("input", { type: "text", value: this.s.userName, placeholder: "e.g. Asif", maxlength: 40 });
+    name.addEventListener("input", () => this.save({ userName: name.value.trim() }, false));
     return this.section(
       "Appearance",
+      this.row("Your name", name),
       this.select("outfit", "Wardrobe", outfits, "In auto mode she changes clothes and hair when her mood shifts."),
       this.toggle("checkIns", "Check in now and then", "She asks if you need anything, or how her outfit looks — only while you're at the Mac."),
       this.select("checkInEvery", "How often", [
@@ -531,7 +534,7 @@ export class SettingsPanel {
         ["dark", "Dark"],
         ["neon", "Night City (neon)"],
       ]),
-      this.range("petSize", "Pet size", 0.6, 3, 0.05, (v) => `${Math.round(v * 100)}%`),
+      this.range("petSize", "Pet size", 0.6, 8, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.range("animationSpeed", "Animation speed", 0.5, 2, 0.1, (v) => `${v.toFixed(1)}×`),
     );
   }

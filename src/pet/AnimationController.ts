@@ -11,7 +11,9 @@ export type Gesture =
   | "snore"
   | "change"
   | "hair-touch"
-  | "glance";
+  | "glance"
+  /** Stroked with the cursor. */
+  | "pat";
 
 /** Guide §40: state → base animation. OFF renders nothing. */
 export const STATE_ANIMATION: Record<PetState, Animation | null> = {
@@ -37,6 +39,7 @@ export const GESTURE_MS: Record<Gesture, number> = {
   change: 900,
   "hair-touch": 2200,
   glance: 2000,
+  pat: 2400,
 };
 
 export interface AnimatedView {

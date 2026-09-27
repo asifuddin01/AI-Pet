@@ -97,6 +97,8 @@ pub struct Settings {
     pub check_ins: bool,
     /// "rare", "sometimes" or "often".
     pub check_in_every: String,
+    /// What she calls you ("" → a pet name like "choom").
+    pub user_name: String,
 
     // Appearance
     pub pet_size: f32,
@@ -162,6 +164,7 @@ impl Default for Settings {
             wake_word: false,
             check_ins: true,
             check_in_every: "sometimes".into(),
+            user_name: String::new(),
             pet_size: 1.0,
             animation_speed: 1.0,
             theme: "auto".into(),
@@ -248,6 +251,7 @@ impl Settings {
             self.outfit = "auto".into();
         }
         self.current_outfit = clean(&self.current_outfit, 32);
+        self.user_name = clean(&self.user_name, 40);
         self.skipped_version = clean(&self.skipped_version, 32);
         if !matches!(self.search_provider.as_str(), "google" | "brave") {
             self.search_provider = defaults.search_provider.clone();
@@ -267,7 +271,7 @@ impl Settings {
             .filter(|(k, v)| !k.is_empty() && !v.is_empty())
             .collect();
         self.speech_rate = finite_or(self.speech_rate, 1.0).clamp(0.5, 2.0);
-        self.pet_size = finite_or(self.pet_size, 1.0).clamp(0.6, 3.0);
+        self.pet_size = finite_or(self.pet_size, 1.0).clamp(0.6, 8.0);
         self.animation_speed = finite_or(self.animation_speed, 1.0).clamp(0.5, 2.0);
         if let Some(p) = self.last_position {
             if !p.x.is_finite() || !p.y.is_finite() {

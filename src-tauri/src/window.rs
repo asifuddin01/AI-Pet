@@ -217,36 +217,45 @@ pub fn set_click_through(app: &AppHandle, enabled: bool, hit: Option<Rect>) -> R
 pub fn start_click_through_watcher(app: AppHandle) {
     std::thread::Builder::new()
         .name("pet-hit-test".into())
-        .spawn(move || loop {
-            let state = app.state::<AppState>();
-            if !state.pet.visible.load(Ordering::SeqCst) {
-                std::thread::sleep(HIT_TEST_IDLE);
-                continue;
-            }
-            let (enabled, hit) = {
-                let ct = state.pet.click_through.lock().unwrap();
-                (ct.enabled, ct.hit)
-            };
-            // Interactive mode: the whole window takes the mouse. Idle mode: only the pet.
-            let ignore = enabled
-                && !hit.is_some_and(|hit| {
+        .spawn(move || {
+            let mut last_hover = None;
+            loop {
+                let state = app.state::<AppState>();
+                if !state.pet.visible.load(Ordering::SeqCst) {
+                    std::thread::sleep(HIT_TEST_IDLE);
+                    continue;
+                }
+                let (enabled, hit) = {
+                    let ct = state.pet.click_through.lock().unwrap();
+                    (ct.enabled, ct.hit)
+                };
+                let cursor = crate::screens::cursor_position(&app);
+                let over = hit.is_some_and(|hit| {
                     let frame = *state.pet.frame.lock().unwrap();
-                    hit.offset(Point { x: frame.x, y: frame.y })
-                        .contains(crate::screens::cursor_position(&app))
+                    hit.offset(Point { x: frame.x, y: frame.y }).contains(cursor)
                 });
-            let mut ct = state.pet.click_through.lock().unwrap();
-            if ct.enabled == enabled && ct.applied_ignore != Some(ignore) {
-                if let Ok(win) = pet_window(&app) {
-                    if win.set_ignore_cursor_events(ignore).is_ok() {
-                        ct.applied_ignore = Some(ignore);
+                // The webview gets no mouse moves while it isn't focused, so tell it when the
+                // cursor moves over her (the UI turns back-and-forth strokes into a pat).
+                if enabled && over && last_hover != Some(cursor) {
+                    let _ = app.emit_to(PET_LABEL, "pet-hover", cursor);
+                }
+                last_hover = over.then_some(cursor);
+                // Interactive mode: the whole window takes the mouse. Idle mode: only the pet.
+                let ignore = enabled && !over;
+                let mut ct = state.pet.click_through.lock().unwrap();
+                if ct.enabled == enabled && ct.applied_ignore != Some(ignore) {
+                    if let Ok(win) = pet_window(&app) {
+                        if win.set_ignore_cursor_events(ignore).is_ok() {
+                            ct.applied_ignore = Some(ignore);
+                        }
+                    }
+                    if enabled && !ignore {
+                        remember_previous_app(&app);
                     }
                 }
-                if enabled && !ignore {
-                    remember_previous_app(&app);
-                }
+                drop(ct);
+                std::thread::sleep(if enabled { HIT_TEST_ACTIVE } else { HIT_TEST_IDLE });
             }
-            drop(ct);
-            std::thread::sleep(if enabled { HIT_TEST_ACTIVE } else { HIT_TEST_IDLE });
         })
         .expect("spawn hit-test thread");
 }

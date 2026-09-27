@@ -60,6 +60,8 @@ export interface Settings {
   /** Now and then she offers help or asks how she looks. */
   checkIns: boolean;
   checkInEvery: "rare" | "sometimes" | "often";
+  /** What she calls you ("" → a pet name). */
+  userName: string;
 
   petSize: number;
   animationSpeed: number;

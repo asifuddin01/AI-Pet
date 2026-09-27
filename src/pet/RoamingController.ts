@@ -21,6 +21,12 @@ const BOTTOM_BAND = 36;
 
 export const IDLE_MIN_MS = 2000;
 export const IDLE_MAX_MS = 8000;
+/** Now and then a proper break (long enough for her to sit down). */
+const BREAK_CHANCE = 0.2;
+const BREAK_MIN_MS = 20_000;
+const BREAK_MAX_MS = 45_000;
+/** In float mode she still walks some of the time. */
+const FLOAT_CHANCE = 0.6;
 
 /** Area the pet's top-left corner may occupy on a screen. */
 export function roamBounds(visible: Rect, size: number, area: RoamArea): Rect {
@@ -86,7 +92,7 @@ export interface RoamingDeps {
   /** Resolves true on arrival, false if the move was cancelled. */
   moveTo(target: Point, durationMs: number): Promise<boolean>;
   stopMotion(): void;
-  onWalkStart(direction: "left" | "right"): void;
+  onWalkStart(dx: number, dy: number, floating: boolean): void;
   onWalkEnd(position: Point): void;
   random?: () => number;
   setTimeout?: (fn: () => void, ms: number) => unknown;
@@ -140,6 +146,7 @@ export class RoamingController {
   }
 
   restMs(): number {
+    if (this.random() < BREAK_CHANCE) return BREAK_MIN_MS + this.random() * (BREAK_MAX_MS - BREAK_MIN_MS);
     return IDLE_MIN_MS + this.random() * (IDLE_MAX_MS - IDLE_MIN_MS);
   }
 
@@ -156,15 +163,18 @@ export class RoamingController {
     const screens = await this.deps.getScreens();
     if (!this.running || gen !== this.generation) return;
     const from = this.deps.getPosition();
-    const to = chooseDestination(from, this.deps.petSize(), screens, this.deps.options(), this.random);
+    const opts = this.deps.options();
+    // A float-mode walk strolls on an invisible floor instead of drifting anywhere.
+    const floating = opts.roamArea === "float" && this.random() < FLOAT_CHANCE;
+    const area = opts.roamArea === "float" && !floating ? "anywhere" : opts.roamArea;
+    const to = chooseDestination(from, this.deps.petSize(), screens, { ...opts, roamArea: area }, this.random);
     if (!to) {
       this.schedule(this.restMs());
       return;
     }
     this.walking = true;
-    this.deps.onWalkStart(to.x < from.x ? "left" : "right");
-    const opts = this.deps.options();
-    const arrived = await this.deps.moveTo(to, walkDurationMs(from, to, opts.animationSpeed, opts.roamArea === "float"));
+    this.deps.onWalkStart(to.x - from.x, to.y - from.y, floating);
+    const arrived = await this.deps.moveTo(to, walkDurationMs(from, to, opts.animationSpeed, floating));
     if (gen !== this.generation) return;
     this.walking = false;
     this.deps.onWalkEnd(arrived ? to : this.deps.getPosition());

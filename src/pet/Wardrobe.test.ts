@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { chooseVoice } from "../services/TTSService";
 import {
   decideMood,
+  HELLO_LINES,
   MOOD_INFO,
+  moodLine,
   MOOD_OUTFITS,
   MoodTracker,
   OUTFIT_IDS,
@@ -45,6 +47,11 @@ describe("mood", () => {
       expect(MOOD_INFO[mood as keyof typeof MOOD_INFO].greeting.length).toBeGreaterThan(3);
       for (const [id] of options) expect(OUTFITS[id]).toBeDefined();
     }
+  });
+
+  it("greets you by name, or by a pet name when none is set", () => {
+    expect(moodLine(HELLO_LINES, "playful", "Asif", () => 0)).toBe("Hi honey! Hi Asif! I'm back!");
+    expect(moodLine(HELLO_LINES, "confident", "", () => 0)).toBe("Hey, choom. Missed me?");
   });
 });
 

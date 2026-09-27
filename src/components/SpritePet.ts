@@ -179,8 +179,8 @@ export class SpritePet implements CharacterView {
     }
   }
 
-  setFacing(direction: "left" | "right"): void {
-    this.el.dataset.facing = direction;
+  setFacing(dx: number): void {
+    this.el.dataset.facing = dx < 0 ? "left" : "right";
   }
 
   setScale(): void {

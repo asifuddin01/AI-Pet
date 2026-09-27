@@ -11,7 +11,8 @@ export interface CharacterView extends AnimatedView {
   readonly currentOutfit: Outfit;
   setOutfit(outfit: Outfit): void;
   changeOutfit(outfit: Outfit): Promise<void>;
-  setFacing(direction: "left" | "right"): void;
+  /** Screen-space direction she's heading in (dy > 0 is down the screen). */
+  setFacing(dx: number, dy: number): void;
   /** Ratio of the pet box to the 120-unit art box (vector art only uses it). */
   setScale(scale: number): void;
   setSpeed(speed: number): void;

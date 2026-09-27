@@ -86,8 +86,8 @@ export class Pet implements CharacterView {
     this.el.dataset.anim = animation;
   }
 
-  setFacing(direction: "left" | "right"): void {
-    this.el.dataset.facing = direction;
+  setFacing(dx: number): void {
+    this.el.dataset.facing = dx < 0 ? "left" : "right";
   }
 
   playGesture(gesture: Gesture, durationMs: number): void {

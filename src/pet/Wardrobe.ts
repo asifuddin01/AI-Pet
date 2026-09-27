@@ -467,6 +467,32 @@ export const MOOD_INFO: Record<Mood, { emoji: string; greeting: string }> = {
   melancholy: { emoji: "🌧", greeting: "…Hey. What do you need?" },
 };
 
+/** Hello when she shows up. `{name}` is you (Settings → Your name), else a pet name. */
+export const HELLO_LINES: Record<Mood, string[]> = {
+  confident: ["Hey, {name}. Missed me?", "Hi {name}. Ready when you are."],
+  focused: ["Hi {name}. Let's get to work.", "Hey {name}. What's the job today?"],
+  dreamy: ["Hi, honey… I was just thinking about you.", "Hey {name}… you're here. Good."],
+  sleepy: ["*yawn*… hi, {name}.", "Mmh… hi honey. I'm awake. Mostly."],
+  playful: ["Hi honey! Hi {name}! I'm back!", "Heeey, {name}! Miss me?"],
+  melancholy: ["…Hi, {name}. Glad you're here.", "Hey, honey. Stay a while?"],
+};
+
+/** What she says when you stroke her with the cursor. */
+export const PAT_LINES: Record<Mood, string[]> = {
+  confident: ["Mm. I know, I'm great.", "Careful, {name}. I could get used to that."],
+  focused: ["Hey, I'm working… okay, one more.", "Heh. Thanks, {name}. Back to it."],
+  dreamy: ["Mmm… that's nice.", "Don't stop, {name}…"],
+  sleepy: ["Mmh… five more minutes…", "That's making me sleepier, honey…"],
+  playful: ["Hehe, that tickles!", "Again, {name}! Again!"],
+  melancholy: ["…Thanks. I needed that.", "You're sweet, {name}."],
+};
+
+/** A random line for the mood, addressed to you. */
+export function moodLine(lines: Record<Mood, string[]>, mood: Mood, name: string, random: () => number = Math.random): string {
+  const options = lines[mood];
+  return options[Math.floor(random() * options.length)].replaceAll("{name}", name || "choom");
+}
+
 export interface MoodSignals {
   /** Local hour, 0–23. */
   hour: number;
