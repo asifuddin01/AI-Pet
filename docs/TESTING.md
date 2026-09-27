@@ -3,7 +3,7 @@
 ## Automated
 
 ```bash
-npm test                                   # Vitest — 86 tests
+npm test                                   # Vitest — 87 tests
 npm run typecheck
 cd src-tauri
 cargo test                                 # 34 tests

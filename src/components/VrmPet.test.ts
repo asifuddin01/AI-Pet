@@ -43,6 +43,13 @@ describe("clothing layers per outfit", () => {
     expect(layers("gym")).toEqual(expect.arrayContaining(["Layer_CropTop", "Layer_Leggings"]));
   });
 
+  it("netrunner wears her headphones and neural cables", () => {
+    expect(layers("netrunner")).toEqual(
+      expect.arrayContaining(["Layer_Headphones", "Layer_HeadphonesGlow", "Layer_Cables", "Layer_Tights"]),
+    );
+    expect(layerPlan(OUTFITS.netrunner).get("Layer_HeadphonesGlow")?.glow).toBe(OUTFITS.netrunner.top.accent);
+  });
+
   it("every outfit has a top and shoes", () => {
     const tops = ["Layer_Suit", "Layer_Leotard", "Layer_CropTop", "Layer_BikiniTop"];
     for (const id of OUTFIT_IDS) {

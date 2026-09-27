@@ -153,7 +153,8 @@ pet dresses it from each outfit's definition: it shows and hides the layers and 
 reloading. Recognised layers: `Layer_Suit`, `Layer_Leotard`, `Layer_CropTop`, `Layer_BikiniTop`,
 `Layer_BikiniBottom`, `Layer_Jacket`, `Layer_JacketOff`, `Layer_Sleeves`, `Layer_Shorts`, `Layer_Skirt`,
 `Layer_Jeans`, `Layer_Leggings`, `Layer_ThighHigh`, `Layer_Tights`, `Layer_Socks`, `Layer_Boots`,
-`Layer_Shoes`, `Layer_Glasses`, `Layer_Lenses`, `Layer_Necklace`. Give them neutral (white)
+`Layer_Shoes`, `Layer_Glasses`, `Layer_Lenses`, `Layer_Necklace`, `Layer_Headphones`, `Layer_HeadphonesGlow`,
+`Layer_Cables`. Give them neutral (white)
 textures; the outfit supplies the colours.
 
 3D motion is procedural and blended: she shifts her weight between legs, rests a hand on her
@@ -221,7 +222,7 @@ More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Development
 
 ```bash
-npm test               # 86 TypeScript unit tests (Vitest)
+npm test               # 87 TypeScript unit tests (Vitest)
 npm run typecheck
 cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings   # 34 Rust tests
 ```

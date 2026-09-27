@@ -32,6 +32,16 @@ const envelope = (t: number) => {
 const approach = (current: number, target: number, rate: number, dt: number) =>
   current + (target - current) * (1 - Math.exp(-rate * dt));
 
+/** Resting eyelid level per mood (0 open … 1 closed). */
+const MOOD_LID: Record<Mood, number> = {
+  confident: 0.3,
+  focused: 0.24,
+  dreamy: 0.4,
+  sleepy: 0.5,
+  playful: 0.14,
+  melancholy: 0.34,
+};
+
 /** Base facial expression per mood (VRM preset name → weight). */
 const MOOD_FACE: Record<Mood, Partial<Record<string, number>>> = {
   confident: { happy: 0.12 },
@@ -89,6 +99,7 @@ export class VrmPet implements CharacterView {
   private handOnHip = false;
   private hipHand = 0;
   private nextStance = 5;
+  private lid = 0.3;
   /** Clothing layers inside the model ("Layer_*" meshes), toggled and tinted per outfit. */
   private layers = new Map<string, THREE.Mesh[]>();
 
@@ -556,6 +567,11 @@ export class VrmPet implements CharacterView {
       }
     }
     if (this.gestureWeight("blink")) blink = Math.max(blink, 1);
+    // Resting eyelids: Lucy's calm, half-lidded look (lighter when she's playful or surprised).
+    const alert = a === "listening" || a === "error" || happy > 0.2;
+    const lid = alert ? MOOD_LID[this.mood] * 0.35 : MOOD_LID[this.mood];
+    this.lid = approach(this.lid, lid, 3, dt);
+    blink = this.lid + (1 - this.lid) * blink;
     target.set("blink", blink);
 
     // Talking: mouth flaps with a little randomness while speaking.
@@ -642,6 +658,11 @@ export function layerPlan(o: Outfit): Map<string, LayerLook> {
   if (o.extras.includes("glasses") || o.extras.includes("sunglasses")) plan.set("Layer_Glasses", { color: "#16141c" });
   if (o.extras.includes("sunglasses")) plan.set("Layer_Lenses", { color: "#1c1830", opacity: 0.82 });
   if (o.extras.includes("pendant")) plan.set("Layer_Necklace", { color: "#e2b54f", glow: "#6b4b10" });
+  if (o.extras.includes("headphones")) {
+    plan.set("Layer_Headphones", { color: "#1b1829", shine: "#4a4570" });
+    plan.set("Layer_HeadphonesGlow", { color: "#000000", glow: o.top.accent });
+  }
+  if (o.extras.includes("cables")) plan.set("Layer_Cables", { color: "#24212e", glow: "#000000", shine: "#5a5470" });
   return plan;
 }
 
