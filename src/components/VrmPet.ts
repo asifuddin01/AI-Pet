@@ -628,11 +628,24 @@ const mixHex = (a: string, b: string, t: number) =>
 export function layerPlan(o: Outfit): Map<string, LayerLook> {
   const plan = new Map<string, LayerLook>();
   const suit = mixHex(o.top.from, o.top.to, 0.55);
-  const suitLook = { color: suit, glow: o.top.accent, shine: o.top.shine };
-  if (o.top.style === "leotard") plan.set("Layer_Leotard", suitLook);
-  else if (o.top.style === "crop") plan.set("Layer_CropTop", suitLook);
-  else if (o.top.style === "bikini") plan.set("Layer_BikiniTop", { color: suit, shine: o.top.shine });
-  else plan.set("Layer_Suit", suitLook);
+  const suitLook: LayerLook = { color: suit, glow: o.top.matte ? undefined : o.top.accent, shine: o.top.shine };
+  const TOP_LAYER: Partial<Record<Outfit["top"]["style"], string>> = {
+    leotard: "Layer_Leotard",
+    crop: "Layer_CropTop",
+    bikini: "Layer_BikiniTop",
+    bra: "Layer_Bra",
+    scoop: "Layer_Scoop",
+    deepv: "Layer_DeepV",
+    tee: "Layer_Tee",
+    shirt: "Layer_Shirt",
+    "shirt-open": "Layer_ShirtOpen",
+    babydoll: "Layer_Babydoll",
+    "saree-blouse": "Layer_SareeBlouse",
+  };
+  plan.set(TOP_LAYER[o.top.style] ?? "Layer_Suit", suitLook);
+  if (o.top.style === "bra" || o.top.style === "babydoll") plan.set("Layer_Bra", { color: suit, glow: o.top.accent, shine: o.top.shine });
+  if (o.top.style === "babydoll") plan.set("Layer_Babydoll", { color: suit, glow: o.top.accent });
+  if (o.top.style === "shirt-open" && o.underwear) plan.set("Layer_Bra", { color: o.underwear.color, glow: o.underwear.trim });
   if (o.jacket) {
     plan.set(o.jacket.offShoulder ? "Layer_JacketOff" : "Layer_Jacket", { color: o.jacket.from, opacity: o.jacket.opacity });
     plan.set("Layer_Sleeves", { color: o.jacket.sleeve?.[0] ?? o.jacket.from, opacity: o.jacket.opacity });
@@ -643,7 +656,14 @@ export function layerPlan(o: Outfit): Map<string, LayerLook> {
   else if (o.bottom.style === "skirt") plan.set("Layer_Skirt", { color: o.bottom.color, glow: o.bottom.shade });
   else if (o.bottom.style === "shorts") plan.set("Layer_Shorts", { color: o.bottom.color });
   else if (o.bottom.style === "jeans") plan.set("Layer_Jeans", { color: o.bottom.color });
-  else if (o.bottom.style === "bikini") plan.set("Layer_BikiniBottom", { color: o.bottom.color, shine: o.top.shine });
+  else if (o.bottom.style === "bikini" || o.bottom.style === "panties") {
+    plan.set("Layer_BikiniBottom", { color: o.bottom.color, shine: o.top.shine });
+  } else if (o.bottom.style === "longskirt") plan.set("Layer_LongSkirt", { color: o.bottom.color, glow: o.bottom.shade });
+  else if (o.bottom.style === "pencil") plan.set("Layer_PencilSkirt", { color: o.bottom.color, glow: o.bottom.shade });
+  else if (o.bottom.style === "saree") {
+    plan.set("Layer_SareeSkirt", { color: o.bottom.color });
+    plan.set("Layer_Pallu", { color: o.bottom.color });
+  }
   const legs = o.legs;
   const legShine = mixHex(legs.color, "#ffffff", 0.18);
   if (legs.style === "thighhigh") plan.set("Layer_ThighHigh", { color: legs.color, glow: legs.band, shine: legShine });
@@ -663,6 +683,18 @@ export function layerPlan(o: Outfit): Map<string, LayerLook> {
     plan.set("Layer_HeadphonesGlow", { color: "#000000", glow: o.top.accent });
   }
   if (o.extras.includes("cables")) plan.set("Layer_Cables", { color: "#24212e", glow: "#000000", shine: "#5a5470" });
+  if (o.extras.includes("veil")) {
+    plan.set("Layer_Veil", { color: "#1b1829" });
+    plan.set("Layer_VeilBand", { color: "#f4f2fa" });
+  }
+  if (o.extras.includes("cap")) plan.set("Layer_Cap", { color: "#f2f0f7", glow: "#000000" });
+  if (o.extras.includes("ribbon")) plan.set("Layer_Ribbon", { color: o.top.accent });
+  if (o.extras.includes("garter")) plan.set("Layer_Garter", { color: o.legs.color, shine: "#4a4454" });
+  if (o.extras.includes("bangles")) plan.set("Layer_Bangles", { color: "#cfd3dd", shine: "#ffffff" });
+  if (o.extras.includes("flowers")) {
+    plan.set("Layer_HairFlowers", { color: "#fdfbf6" });
+    plan.set("Layer_HairRoses", { color: "#c21f3a" });
+  }
   return plan;
 }
 

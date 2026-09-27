@@ -50,8 +50,33 @@ describe("clothing layers per outfit", () => {
     expect(layerPlan(OUTFITS.netrunner).get("Layer_HeadphonesGlow")?.glow).toBe(OUTFITS.netrunner.top.accent);
   });
 
+  it("office, teacher and sister looks use skirts, blouses and headwear", () => {
+    expect(layers("office")).toEqual(expect.arrayContaining(["Layer_Shirt", "Layer_Sleeves", "Layer_PencilSkirt", "Layer_Ribbon"]));
+    const teacher = layerPlan(OUTFITS.teacher);
+    expect(teacher.has("Layer_ShirtOpen")).toBe(true);
+    expect(teacher.get("Layer_Bra")?.color).toBe(OUTFITS.teacher.underwear?.color);
+    expect(layers("sister")).toEqual(expect.arrayContaining(["Layer_LongSkirt", "Layer_Veil", "Layer_VeilBand", "Layer_Necklace"]));
+    expect(layers("commander")).toEqual(expect.arrayContaining(["Layer_DeepV", "Layer_Cap", "Layer_Boots"]));
+    expect(layerPlan(OUTFITS.office).get("Layer_Shirt")?.glow).toBeUndefined(); // matte fabric
+  });
+
+  it("lingerie sets: bra with matching bottoms, garters when asked", () => {
+    expect(layers("lingerie")).toEqual(expect.arrayContaining(["Layer_Bra", "Layer_BikiniBottom"]));
+    expect(layers("midnight")).toEqual(expect.arrayContaining(["Layer_Bra", "Layer_Garter", "Layer_JacketOff", "Layer_ThighHigh"]));
+    expect(layers("babydoll")).toEqual(expect.arrayContaining(["Layer_Babydoll", "Layer_Bra"]));
+  });
+
+  it("saree: blouse, drape and pallu, bangles and flowers", () => {
+    expect(layers("saree")).toEqual(
+      expect.arrayContaining(["Layer_SareeBlouse", "Layer_SareeSkirt", "Layer_Pallu", "Layer_Bangles", "Layer_HairFlowers", "Layer_HairRoses"]),
+    );
+  });
+
   it("every outfit has a top and shoes", () => {
-    const tops = ["Layer_Suit", "Layer_Leotard", "Layer_CropTop", "Layer_BikiniTop"];
+    const tops = [
+      "Layer_Suit", "Layer_Leotard", "Layer_CropTop", "Layer_BikiniTop", "Layer_Bra", "Layer_Scoop",
+      "Layer_DeepV", "Layer_Tee", "Layer_Shirt", "Layer_ShirtOpen", "Layer_Babydoll", "Layer_SareeBlouse",
+    ];
     for (const id of OUTFIT_IDS) {
       const plan = layerPlan(OUTFITS[id]);
       expect(tops.some((t) => plan.has(t)), id).toBe(true);

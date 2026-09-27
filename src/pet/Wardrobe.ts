@@ -22,7 +22,19 @@ export type OutfitId =
   | "casual"
   | "street"
   | "beach"
-  | "gym";
+  | "gym"
+  | "office"
+  | "teacher"
+  | "sweater"
+  | "denim"
+  | "sister"
+  | "sisterwhite"
+  | "commander"
+  | "lingerie"
+  | "midnight"
+  | "babydoll"
+  | "shizuku"
+  | "saree";
 
 export interface HairPalette {
   /** Five stops from crown to tips (front hair); back hair is derived darker. */
@@ -37,14 +49,32 @@ export interface Outfit {
   hair: HairPalette;
   /** Bodysuit, swimsuit or dress (the dress replaces top + bottom). */
   top: {
-    /** leotard: Lucy's high-neck, sleeveless, high-cut suit; crop: ends under the bust; bikini: a bandeau. */
-    style: "bodysuit" | "leotard" | "swimsuit" | "dress" | "crop" | "bikini";
+    /** leotard: Lucy's high-neck, sleeveless, high-cut suit; crop: ends under the bust; bikini: a bandeau;
+     *  scoop: off-shoulder neckline; deepv: open collar; tee: cropped t-shirt; shirt / shirt-open: a blouse,
+     *  buttoned or open (over `underwear`); bra; babydoll. */
+    style:
+      | "bodysuit"
+      | "leotard"
+      | "swimsuit"
+      | "dress"
+      | "crop"
+      | "bikini"
+      | "bra"
+      | "scoop"
+      | "deepv"
+      | "tee"
+      | "shirt"
+      | "shirt-open"
+      | "babydoll"
+      | "saree-blouse";
     from: string;
     to: string;
     accent: string;
     shine: string;
     /** Long sleeves (a sweater / turtleneck) when there's no jacket. */
     sleeves?: boolean;
+    /** Plain fabric: no glowing accent lines. */
+    matte?: boolean;
   };
   jacket:
     | null
@@ -60,14 +90,35 @@ export interface Outfit {
         /** Worn slipping off the shoulders. */
         offShoulder?: boolean;
       };
-  bottom: { style: "shorts" | "skirt" | "jeans" | "bikini" | "none"; color: string; shade: string };
+  bottom: {
+    style: "shorts" | "skirt" | "jeans" | "bikini" | "panties" | "longskirt" | "pencil" | "saree" | "none";
+    color: string;
+    /** Trim / hem glow colour. */
+    shade: string;
+  };
+  /** What shows under an open shirt. */
+  underwear?: { color: string; trim: string };
   legs: {
     style: "thighhigh" | "tights" | "leggings" | "tights-boots" | "socks" | "sheer-boots" | "boots" | "bare";
     color: string;
     band: string;
     shoe: string;
   };
-  extras: ("headphones" | "moonclip" | "circuits" | "sunglasses" | "glasses" | "pendant" | "cables")[];
+  extras: (
+    | "headphones"
+    | "moonclip"
+    | "circuits"
+    | "sunglasses"
+    | "glasses"
+    | "pendant"
+    | "cables"
+    | "veil"
+    | "cap"
+    | "ribbon"
+    | "garter"
+    | "bangles"
+    | "flowers"
+  )[];
 }
 
 const HAIR = {
@@ -244,6 +295,139 @@ export const OUTFITS: Record<OutfitId, Outfit> = {
     legs: { style: "leggings", color: "#23253a", band: "#5ff3ff", shoe: "#f1eff7" },
     extras: [],
   },
+  office: {
+    id: "office",
+    name: "Office",
+    emoji: "💼",
+    hair: HAIR.moon,
+    top: { style: "shirt", from: "#fbfbff", to: "#e4e3ef", accent: "#c0284a", shine: "#ffffff", sleeves: true, matte: true },
+    jacket: null,
+    bottom: { style: "pencil", color: "#1d1b28", shade: "#000000" },
+    legs: { style: "thighhigh", color: "#1b1829", band: "#1b1829", shoe: "#16141f" },
+    extras: ["ribbon"],
+  },
+  teacher: {
+    id: "teacher",
+    name: "Teacher",
+    emoji: "📚",
+    hair: HAIR.moon,
+    top: { style: "shirt-open", from: "#fbfbff", to: "#e4e3ef", accent: "#ff6f91", shine: "#ffffff", sleeves: true, matte: true },
+    underwear: { color: "#c0284a", trim: "#ff6f91" },
+    jacket: null,
+    bottom: { style: "pencil", color: "#1d1b28", shade: "#000000" },
+    legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#16141f" },
+    extras: ["glasses"],
+  },
+  sweater: {
+    id: "sweater",
+    name: "Sweater dress",
+    emoji: "🖤",
+    hair: HAIR.moon,
+    top: { style: "scoop", from: "#27232f", to: "#17151d", accent: "#3a3548", shine: "#4a4658", sleeves: true, matte: true },
+    jacket: null,
+    bottom: { style: "skirt", color: "#1e1b25", shade: "#000000" },
+    legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#1e1b25" },
+    extras: [],
+  },
+  denim: {
+    id: "denim",
+    name: "Tee & denim",
+    emoji: "🧋",
+    hair: HAIR.pastel,
+    top: { style: "tee", from: "#ffffff", to: "#eceaf4", accent: "#d9d6ec", shine: "#ffffff", matte: true },
+    jacket: null,
+    bottom: { style: "shorts", color: "#4a6f9f", shade: "#36547e" },
+    legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#f1eff7" },
+    extras: [],
+  },
+  sister: {
+    id: "sister",
+    name: "Sister",
+    emoji: "✝️",
+    hair: HAIR.moon,
+    top: { style: "bodysuit", from: "#1f1c27", to: "#121017", accent: "#e8e6f0", shine: "#3c3848", sleeves: true, matte: true },
+    jacket: null,
+    bottom: { style: "longskirt", color: "#1a1822", shade: "#000000" },
+    legs: { style: "thighhigh", color: "#f4f2fa", band: "#f4f2fa", shoe: "#16141f" },
+    extras: ["veil", "pendant"],
+  },
+  sisterwhite: {
+    id: "sisterwhite",
+    name: "White sister",
+    emoji: "🕊️",
+    hair: HAIR.moon,
+    top: { style: "bodysuit", from: "#fbfaff", to: "#e6e3f0", accent: "#d9b35a", shine: "#ffffff", sleeves: true, matte: true },
+    jacket: null,
+    bottom: { style: "longskirt", color: "#f6f4fb", shade: "#d9b35a" },
+    legs: { style: "thighhigh", color: "#2a2530", band: "#2a2530", shoe: "#2a2530" },
+    extras: ["veil", "pendant"],
+  },
+  commander: {
+    id: "commander",
+    name: "Commander",
+    emoji: "🎖️",
+    hair: HAIR.cyber,
+    top: { style: "deepv", from: "#f7f6fb", to: "#dcdae8", accent: "#1b1829", shine: "#ffffff", sleeves: true, matte: true },
+    jacket: null,
+    bottom: { style: "longskirt", color: "#f4f3f9", shade: "#000000" },
+    legs: { style: "boots", color: "#16141f", band: "#16141f", shoe: "#16141f" },
+    extras: ["cap"],
+  },
+  lingerie: {
+    id: "lingerie",
+    name: "Lingerie (white)",
+    emoji: "🤍",
+    hair: HAIR.moon,
+    top: { style: "bra", from: "#ffffff", to: "#eeedf6", accent: "#ffffff", shine: "#ffffff" },
+    jacket: null,
+    bottom: { style: "panties", color: "#fbfbff", shade: "#e7e5f1" },
+    legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#f1eff7" },
+    extras: [],
+  },
+  midnight: {
+    id: "midnight",
+    name: "Midnight",
+    emoji: "🖤",
+    hair: HAIR.neon,
+    top: { style: "bra", from: "#221e28", to: "#141218", accent: "#6b5a7a", shine: "#4a4454" },
+    jacket: { style: "coat", from: "#b8a98a", to: "#8d7f62", lining: "#e9e1cf", trim: "#6c5f45", offShoulder: true },
+    bottom: { style: "panties", color: "#1b1820", shade: "#141218" },
+    legs: { style: "thighhigh", color: "#1b1829", band: "#1b1829", shoe: "#16141f" },
+    extras: ["garter"],
+  },
+  babydoll: {
+    id: "babydoll",
+    name: "Babydoll",
+    emoji: "🌙",
+    hair: HAIR.cyber,
+    top: { style: "babydoll", from: "#2a2233", to: "#18141d", accent: "#8b6fd6", shine: "#4d4260" },
+    jacket: null,
+    bottom: { style: "panties", color: "#1d1822", shade: "#141218" },
+    legs: { style: "thighhigh", color: "#1b1829", band: "#1b1829", shoe: "#16141f" },
+    extras: [],
+  },
+  shizuku: {
+    id: "shizuku",
+    name: "Bookworm",
+    emoji: "🕷️",
+    hair: HAIR.moon,
+    top: { style: "crop", from: "#23202b", to: "#141218", accent: "#2f2b3a", shine: "#4a4658", matte: true },
+    jacket: null,
+    bottom: { style: "jeans", color: "#2f3b52", shade: "#222b3d" },
+    legs: { style: "tights", color: "#2f3b52", band: "#2f3b52", shoe: "#16141f" },
+    extras: ["glasses"],
+  },
+  saree: {
+    id: "saree",
+    name: "Saree",
+    emoji: "🪷",
+    hair: HAIR.moon,
+    top: { style: "saree-blouse", from: "#243056", to: "#18203c", accent: "#243056", shine: "#3a4a7a", matte: true },
+    jacket: null,
+    bottom: { style: "saree", color: "#f4eddc", shade: "#1b1829" },
+    legs: { style: "bare", color: "#fbd6c8", band: "#fbd6c8", shoe: "#c9a24a" },
+    extras: ["bangles", "flowers"],
+  },
   rain: {
     id: "rain",
     name: "Neon rain",
@@ -266,12 +450,12 @@ export function outfitById(id: string | undefined): Outfit {
 
 /** Which outfits suit each mood, with weights. */
 export const MOOD_OUTFITS: Record<Mood, [OutfitId, number][]> = {
-  confident: [["edgerunner", 3], ["street", 2], ["nightcity", 2], ["cyberdress", 2], ["techwear", 2], ["nightout", 1]],
-  focused: [["netrunner", 3], ["casual", 2], ["gym", 1], ["nightcity", 1], ["edgerunner", 1]],
-  dreamy: [["moonlight", 3], ["techwear", 1], ["rain", 1]],
-  sleepy: [["cozy", 3], ["moonlight", 1]],
-  playful: [["nightout", 2], ["beach", 2], ["street", 2], ["pool", 1], ["gym", 1], ["cyberdress", 1], ["edgerunner", 1]],
-  melancholy: [["rain", 3], ["casual", 2], ["cozy", 1]],
+  confident: [["edgerunner", 3], ["street", 2], ["commander", 2], ["nightcity", 2], ["cyberdress", 2], ["techwear", 2], ["office", 1], ["nightout", 1]],
+  focused: [["netrunner", 3], ["casual", 2], ["office", 2], ["teacher", 1], ["shizuku", 1], ["gym", 1], ["nightcity", 1], ["edgerunner", 1]],
+  dreamy: [["moonlight", 3], ["saree", 2], ["sisterwhite", 1], ["lingerie", 1], ["techwear", 1], ["rain", 1]],
+  sleepy: [["cozy", 3], ["babydoll", 2], ["sweater", 2], ["lingerie", 1], ["moonlight", 1]],
+  playful: [["nightout", 2], ["beach", 2], ["street", 2], ["denim", 2], ["midnight", 1], ["pool", 1], ["gym", 1], ["cyberdress", 1], ["edgerunner", 1]],
+  melancholy: [["rain", 3], ["casual", 2], ["sister", 2], ["saree", 1], ["sweater", 1], ["cozy", 1]],
 };
 
 export const MOOD_INFO: Record<Mood, { emoji: string; greeting: string }> = {

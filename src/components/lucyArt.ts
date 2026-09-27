@@ -20,7 +20,34 @@ const stops = (colors: readonly string[]) =>
   colors.map((c, i) => `<stop offset="${[0, 0.42, 0.64, 0.8, 1][i]}" stop-color="${c}"/>`).join("");
 
 /** Gradients shared by all parts; re-rendered when the outfit changes. */
-export function renderDefs(o: Outfit): string {
+/** The built-in drawing has fewer garments than 3D models: draw the nearest look. */
+function forArt(o: Outfit): Outfit {
+  const t = o.top;
+  const topMap: Partial<Record<Outfit["top"]["style"], Outfit["top"]["style"]>> = {
+    bra: "bikini",
+    babydoll: "dress",
+    tee: "crop",
+    scoop: "bodysuit",
+    deepv: "bodysuit",
+    shirt: "bodysuit",
+    "shirt-open": "bikini",
+    "saree-blouse": "crop",
+  };
+  let top = { ...t, style: topMap[t.style] ?? t.style };
+  if (t.style === "shirt-open" && o.underwear) {
+    top = { ...top, from: o.underwear.color, to: o.underwear.color, accent: o.underwear.trim };
+  }
+  const bottomMap: Partial<Record<Outfit["bottom"]["style"], Outfit["bottom"]["style"]>> = {
+    longskirt: "skirt",
+    pencil: "skirt",
+    panties: "bikini",
+    saree: "skirt",
+  };
+  return { ...o, top, bottom: { ...o.bottom, style: bottomMap[o.bottom.style] ?? o.bottom.style } };
+}
+
+export function renderDefs(outfit: Outfit): string {
+  const o = forArt(outfit);
   const j = o.jacket ?? { from: "#ffffff", to: "#d9d6ec" };
   const sleeve = o.jacket?.sleeve ?? [j.from, j.to];
   return `<defs>
@@ -400,6 +427,7 @@ export interface PetParts {
 }
 
 export function renderParts(o: Outfit): PetParts {
+  o = forArt(o);
   const leg = legLeft(o);
   const arm = armLeft(o);
   return {
