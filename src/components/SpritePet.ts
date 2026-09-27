@@ -20,6 +20,7 @@ const MIME: Record<string, string> = {
 export const ANIMATION_SPRITE: Record<Animation, SpriteState[]> = {
   idle: ["idle"],
   walk: ["walk", "idle"],
+  float: ["idle"],
   thinking: ["think", "idle"],
   talking: ["talk", "idle"],
   listening: ["listen", "think", "idle"],

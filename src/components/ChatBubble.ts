@@ -22,7 +22,8 @@ export interface BubbleModel {
   transcript?: TranscriptLine[];
   tasks?: MenuButton[];
   actions?: MenuButton[];
-  input?: { placeholder: string } | null;
+  /** `mic`: show the talk button (voice input is on). */
+  input?: { placeholder: string; mic?: boolean } | null;
   hint?: string;
 }
 
@@ -31,6 +32,7 @@ export interface BubbleHandlers {
   onAction(id: string): void;
   onSubmit(text: string): void;
   onClose(): void;
+  onMic?(): void;
 }
 
 const QUOTE_PREVIEW = 140;
@@ -135,6 +137,7 @@ export class ChatBubble {
         model.input.placeholder,
         (text) => this.handlers.onSubmit(text),
         () => this.handlers.onClose(),
+        model.input.mic && this.handlers.onMic ? () => this.handlers.onMic?.() : undefined,
       );
       children.push(this.input.el);
     }
@@ -161,6 +164,10 @@ export class ChatBubble {
   setHint(text: string): void {
     this.hintEl.textContent = text;
     this.hintEl.hidden = !text;
+  }
+
+  setListening(on: boolean): void {
+    this.input?.setListening(on);
   }
 
   focusInput(): void {
@@ -205,8 +212,17 @@ export class ChatBubble {
   /** Height the bubble wants for its current content (before max-height clamps it). */
   naturalHeight(): number {
     if (this.el.hidden) return 0;
-    const chrome = this.el.offsetHeight - this.scroll.clientHeight;
-    return Math.ceil(chrome + this.scroll.scrollHeight);
+    // Measure unconstrained: when content has outgrown the box, the scroll area is already
+    // squeezed to nothing and the fixed height would hide how much more room is needed.
+    const { height, maxHeight } = this.el.style;
+    const scrollTop = this.scroll.scrollTop;
+    this.el.style.height = "auto";
+    this.el.style.maxHeight = "none";
+    const natural = this.el.offsetHeight;
+    this.el.style.height = height;
+    this.el.style.maxHeight = maxHeight;
+    this.scroll.scrollTop = scrollTop;
+    return Math.ceil(natural);
   }
 
   private paintText(text: string, state: TextState): void {

@@ -106,3 +106,28 @@ register it with `TaskRunner.register()`. The bubble picks it up automatically.
 - No shell: the only processes spawned are `/usr/bin/say` (text via stdin) and `/usr/bin/open`
   with a fixed System Settings URL. AI output is only ever rendered as text.
 - Strict CSP; model output is rendered with `textContent` only.
+
+## Tools, commands, voice and search
+
+What happens to anything you type, or say by voice:
+
+1. **Pet commands**, handled by the pet itself (`src/tools/petCommands.ts`): outfits, moving, sleep,
+   voice on/off, hide, settings, tricks, "what can you do".
+2. **Web search phrases** (`src/tools/search.ts`) → `web_search` in Rust (`search.rs`: Google or
+   Brave). The key comes from the Keychain; only the query is sent. The AI then answers from the
+   snippets with numbered sources.
+3. **Offline tools** (`src/tools/`, one `LocalTool` each): calculator, units, timers/reminders,
+   Pomodoro, notes (stored by `notes.rs`), clock. Adding a tool means adding it to `Toolbox.tools`
+   (guide §63).
+4. Everything else goes to the **AI chat**.
+
+Voice input is `VoiceService` (TS) plus `voice/` (Rust). Recording and recognition happen on the
+main thread in `voice/macos.rs`:
+- **`push`**: the 🎤 button or holding ⌥L.
+- **`handsFree`**: the follow-up after "Hey Lucy".
+- **`wake`**: the always-on listener, on-device only. `WakeService` cuts it into utterances at
+  pauses and checks each one with `parseWake` (`src/tools/wake.ts`).
+
+Check-ins and the optional update check are timers in `PetController`. They use
+`get_idle_seconds` so she only talks while someone is at the Mac.
+

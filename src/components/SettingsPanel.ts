@@ -96,6 +96,28 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
+/** Languages for voice input (BCP-47). macOS covers most of these on-device; Bangla needs Whisper. */
+const SPEECH_LANGUAGES: [string, string][] = [
+  ["", "Same as my Mac"],
+  ["en-US", "English (US)"],
+  ["en-GB", "English (UK)"],
+  ["en-IN", "English (India)"],
+  ["bn-BD", "Bangla (Whisper only)"],
+  ["hi-IN", "Hindi"],
+  ["ur-PK", "Urdu (Whisper only)"],
+  ["ar-SA", "Arabic"],
+  ["es-ES", "Spanish"],
+  ["fr-FR", "French"],
+  ["de-DE", "German"],
+  ["it-IT", "Italian"],
+  ["pt-BR", "Portuguese (Brazil)"],
+  ["ru-RU", "Russian"],
+  ["tr-TR", "Turkish"],
+  ["ja-JP", "Japanese"],
+  ["ko-KR", "Korean"],
+  ["zh-CN", "Chinese (Mandarin)"],
+];
+
 /** The Settings window: simple sections, saved as you change them. */
 export class SettingsPanel {
   private status: AppStatus | null = null;
@@ -188,9 +210,11 @@ export class SettingsPanel {
       this.interaction(),
       this.ai(),
       this.voice(),
+      this.search(),
       this.appearance(),
       this.characterSection(),
       this.privacy(),
+      this.updates(),
       this.statusLine,
     );
     this.paintStatus();
@@ -245,16 +269,17 @@ export class SettingsPanel {
       "General",
       this.toggle("launchAtLogin", "Launch at login", "Off unless you turn it on."),
       this.toggle("petEnabled", "Enable pet", `Toggle anytime with ${formatShortcut(this.s.toggleHotkey)}.`),
-      this.toggle("roaming", "Roam around the screen"),
-      this.select("roamArea", "Where to roam", [
-        ["bottom", "Along the bottom (above the Dock)"],
-        ["anywhere", "Anywhere on screen"],
+      this.toggle("roaming", "Roam around the screen", "Or right-click her → Stay still / Move around."),
+      this.select("roamArea", "How she moves", [
+        ["bottom", "Walks along the bottom (above the Dock)"],
+        ["anywhere", "Walks anywhere on screen"],
+        ["float", "Floats around the whole screen (hover)"],
       ]),
       this.toggle("roamAllDisplays", "Roam across all displays", "Default: primary display only."),
     );
   }
 
-  private shortcutField(key: "hotkey" | "toggleHotkey", label: string, help: string): HTMLElement {
+  private shortcutField(key: "hotkey" | "toggleHotkey" | "talkHotkey", label: string, help: string): HTMLElement {
     const button = h("button", { type: "button", class: "shortcut", text: formatShortcut(this.s[key]) });
     button.addEventListener("click", () => {
       button.textContent = "Press keys…";
@@ -410,8 +435,80 @@ export class SettingsPanel {
       this.toggle("speak", "Speak responses", "Built-in macOS voices — offline and free. Her pace and pitch follow her mood."),
       this.row("Voice", h("span", { class: "inline" }, voiceSel, test)),
       this.range("speechRate", "Speech speed", 0.5, 2, 0.1, (v) => `${v.toFixed(1)}×`),
-      this.toggle("voiceInput", "Voice input", "Coming in a future version.", true),
+      ...this.voiceInput(),
     );
+  }
+
+  /** Push-to-talk: engine, language, the talk shortcut and (for Whisper) endpoint + key. */
+  private voiceInput(): HTMLElement[] {
+    const s = this.s;
+    const rows: HTMLElement[] = [
+      this.toggle(
+        "voiceInput",
+        "Voice input",
+        "Talk to her with the 🎤 button or by holding the talk shortcut. The mic is only on while you talk.",
+      ),
+    ];
+    if (!s.voiceInput) return rows;
+    rows.push(
+      this.toggle(
+        "wakeWord",
+        "Answer when I call her",
+        "Say \"Hey Lucy\", \"Lucy, …\" or \"I'm home\". Keeps the mic on (macOS shows the orange dot) " +
+          "but recognises speech on this Mac only, and ignores everything that isn't meant for her. Uses a little battery.",
+      ),
+      this.shortcutField("talkHotkey", "Talk shortcut", "Hold it, say your question, let go. Works from any app."),
+      this.select(
+        "speechEngine",
+        "Speech recognition",
+        [
+          ["apple", "macOS (on-device when supported, free)"],
+          ["whisper", "Whisper (OpenAI-compatible, needs a key)"],
+        ],
+        s.speechEngine === "apple"
+          ? "macOS doesn't recognise Bangla — use Whisper for that."
+          : "Sends the recording to the endpoint below. Supports Bangla and ~50 other languages.",
+      ),
+      this.select("speechLanguage", "Language you speak", SPEECH_LANGUAGES),
+    );
+    if (s.speechEngine === "whisper") {
+      const url = h("input", { type: "url", value: s.sttBaseUrl, placeholder: "https://api.openai.com/v1", spellcheck: "false" });
+      url.addEventListener("input", () => this.save({ sttBaseUrl: url.value.trim() }, false));
+      const model = h("input", { type: "text", value: s.sttModel, placeholder: "whisper-1", spellcheck: "false" });
+      model.addEventListener("input", () => this.save({ sttModel: model.value.trim() }, false));
+      const key = h("input", { type: "password", placeholder: "sk-… (optional if it's your OpenAI chat key)", autocomplete: "off" });
+      const saveKey = h("button", { type: "button", class: "btn btn--primary", text: "Save key" });
+      const removeKey = h("button", { type: "button", class: "btn", text: "Remove" });
+      const keyState = h("small", {
+        class: "muted",
+        text: this.status?.hasSttKey
+          ? "✓ A speech-to-text key is saved in your Keychain."
+          : "No separate key saved: your OpenAI chat key is used if the endpoint is the same.",
+      });
+      saveKey.addEventListener("click", async () => {
+        try {
+          await native.setSttKey(key.value);
+          key.value = "";
+          this.flash("Speech-to-text key saved to your Keychain.");
+        } catch (e) {
+          this.flash(String(e), "warn");
+        }
+        await this.refreshStatus();
+        this.render();
+      });
+      removeKey.addEventListener("click", async () => {
+        await native.deleteSttKey().catch((e) => this.flash(String(e), "warn"));
+        await this.refreshStatus();
+        this.render();
+      });
+      rows.push(
+        this.row("Whisper endpoint", url, "OpenAI, Groq (https://api.groq.com/openai/v1) or a local server."),
+        this.row("Whisper model", model, "e.g. whisper-1, gpt-4o-mini-transcribe, whisper-large-v3"),
+        this.row("Speech-to-text key", h("span", { class: "inline" }, key, saveKey, removeKey)),
+        h("div", { class: "row row--note" }, keyState),
+      );
+    }
+    return rows;
   }
 
   private appearance(): HTMLElement {
@@ -422,6 +519,18 @@ export class SettingsPanel {
     return this.section(
       "Appearance",
       this.select("outfit", "Wardrobe", outfits, "In auto mode she changes clothes and hair when her mood shifts."),
+      this.toggle("checkIns", "Check in now and then", "She asks if you need anything, or how her outfit looks — only while you're at the Mac."),
+      this.select("checkInEvery", "How often", [
+        ["rare", "Rarely (every couple of hours)"],
+        ["sometimes", "Sometimes (about hourly)"],
+        ["often", "Often (every 15–30 min)"],
+      ]),
+      this.select("theme", "Bubble theme", [
+        ["auto", "Match macOS (light / dark)"],
+        ["light", "Light"],
+        ["dark", "Dark"],
+        ["neon", "Night City (neon)"],
+      ]),
       this.range("petSize", "Pet size", 0.6, 3, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.range("animationSpeed", "Animation speed", 0.5, 2, 0.1, (v) => `${v.toFixed(1)}×`),
     );
@@ -591,8 +700,94 @@ export class SettingsPanel {
         h("li", { text: "Selected text, chats and keys are never written to logs or disk." }),
         h("li", { text: "Your API key lives in the macOS Keychain, never in plain files." }),
         h("li", { text: "The clipboard fallback restores your clipboard right after reading." }),
+        h("li", { text: "Notes you save (\"note buy milk\") stay in a file on this Mac; timers and maths never leave it." }),
+        h("li", {
+          text:
+            "Voice input is off by default. When on, the mic listens only while you talk; macOS recognition runs " +
+            "on-device when it can, Whisper sends the clip to the endpoint you chose.",
+        }),
       ),
       h("div", { class: "row row--actions" }, reset),
+    );
+  }
+
+  /** Web search keys: Google Programmable Search (key + engine ID) or Brave Search. */
+  private search(): HTMLElement {
+    const s = this.s;
+    const google = s.searchProvider === "google";
+    const key = h("input", { type: "password", placeholder: google ? "Google API key (AIza…)" : "Brave Search API key", autocomplete: "off" });
+    const saveKey = h("button", { type: "button", class: "btn btn--primary", text: "Save key" });
+    const removeKey = h("button", { type: "button", class: "btn", text: "Remove" });
+    saveKey.addEventListener("click", async () => {
+      try {
+        await native.setSearchKey(key.value);
+        key.value = "";
+        this.flash("Search key saved to your Keychain.");
+      } catch (e) {
+        this.flash(String(e), "warn");
+      }
+      await this.refreshStatus();
+      this.render();
+    });
+    removeKey.addEventListener("click", async () => {
+      await native.deleteSearchKey().catch((e) => this.flash(String(e), "warn"));
+      await this.refreshStatus();
+      this.render();
+    });
+    const rows: HTMLElement[] = [
+      this.select("searchProvider", "Search with", [
+        ["google", "Google (Programmable Search)"],
+        ["brave", "Brave Search"],
+      ], "Say or type \"search for …\", \"google …\", \"weather in …\". Only your query is sent."),
+      this.row("API key", h("span", { class: "inline" }, key, saveKey, removeKey)),
+      h("div", {
+        class: "row row--note",
+      }, h("small", {
+        class: "muted",
+        text: this.status?.hasSearchKey
+          ? "✓ A search key is saved in your Keychain."
+          : google
+            ? "Get a key and a search engine ID at programmablesearchengine.google.com (search the whole web)."
+            : "Get a free key at api-dashboard.search.brave.com.",
+      })),
+    ];
+    if (google) {
+      const cx = h("input", { type: "text", value: s.searchEngineId, placeholder: "e.g. 0123456789abcdef0", spellcheck: "false" });
+      cx.addEventListener("input", () => this.save({ searchEngineId: cx.value.trim() }, false));
+      rows.splice(2, 0, this.row("Search engine ID", cx, "The \"cx\" value of your Programmable Search Engine."));
+    }
+    return this.section("Search", ...rows);
+  }
+
+  private updates(): HTMLElement {
+    const check = h("button", { type: "button", class: "btn", text: "Check for updates" });
+    const result = h("span", { class: "muted", role: "status" });
+    const download = h("button", { type: "button", class: "btn btn--primary", text: "Download", hidden: true });
+    let url = "";
+    download.addEventListener("click", () => void native.openReleasePage(url).catch((e) => this.flash(String(e), "warn")));
+    check.addEventListener("click", async () => {
+      result.textContent = "Checking…";
+      result.dataset.kind = "";
+      download.hidden = true;
+      try {
+        const info = await native.checkForUpdate();
+        url = info.url;
+        if (info.newer && info.latest) {
+          result.textContent = `Version ${info.latest} is out (you have ${info.current}).`;
+          result.dataset.kind = "ok";
+          download.hidden = false;
+        } else {
+          result.textContent = info.latest ? `You're up to date (${info.current}).` : "No releases published yet.";
+        }
+      } catch (e) {
+        result.textContent = String(e);
+        result.dataset.kind = "warn";
+      }
+    });
+    return this.section(
+      "Updates",
+      this.toggle("checkUpdates", "Check once a day", "Asks GitHub for the latest release. Off until you turn it on."),
+      h("div", { class: "row row--actions" }, check, download, result),
     );
   }
 }

@@ -3,8 +3,10 @@
 A tiny, lightweight AI companion that lives on your macOS desktop. **Lucy** (inspired by the
 netrunner from *Cyberpunk: Edgerunners*) floats above your windows, wanders around, and when you
 press **⌥P** she pops up next to whatever text you've selected to translate, explain, define,
-summarize, rewrite or fix it — or just chat. She speaks her answers with the built-in macOS
-voices, and changes clothes when her mood changes.
+summarize, rewrite or fix it — or just chat. Talk to her out loud ("Hey Lucy…"), ask her to do
+things ("wear the saree", "set a timer for 10 minutes", "search for…"), and she answers with the
+built-in macOS voices. She floats around your screen, checks in on you now and then, and changes
+clothes when her mood changes.
 
 Her look is swappable: the built-in drawing, **your own 3D VRM model**, or **anime clips /
 animated images** cut out with the included converter — see
@@ -22,7 +24,12 @@ Built with **Tauri 2 + Rust + TypeScript** (no Electron, no frontend framework) 
 ## Features
 
 - **Floating pet** — borderless, transparent, always on top, on every Space and over full-screen apps; no Dock icon.
-- **Roaming** — strolls calmly along the bottom of the screen (or anywhere), rests 2–8 s between walks, pauses whenever you interact. Primary display by default, optionally all displays.
+- **Roaming** — floats (hovers) around the whole screen by default, or walks along the bottom / anywhere; rests 2–8 s between moves and pauses whenever you interact. Right-click → **Movement** to switch style or make her **stay still**. Primary display by default, optionally all displays.
+- **Talk to her** — 🎤 in the chat box, hold **⌥L** from any app, or turn on **"Hey Lucy"**: she answers to "Lucy", "Hey Lucy", "Hi Lucy", "I'm home", "what are you doing, Lucy?"… (on-device recognition, off by default). Bangla and 50+ languages via Whisper.
+- **Ask her to do things** — "change your outfit", "wear the saree", "float around", "stay still", "come here", "go to sleep", "be quiet", "dance", "open settings", "what can you do".
+- **Offline tools** — calculator ("15% of 80"), unit conversion ("10 km to miles"), timers & reminders ("remind me in 20 min to stretch"), Pomodoro focus sessions, quick notes ("note buy milk"), world clock ("time in Tokyo"). Instant, no AI, no network.
+- **Web search** — "search for …", "google …", "weather in Dhaka", "latest news about …": Google Programmable Search or Brave; the AI answers from the results with numbered sources you can open.
+- **Check-ins** — now and then (only while you're at the Mac) she asks if you need help, or how her new outfit looks. Adjustable or off in Settings.
 - **⌥P** — the pet appears instantly beside your cursor, reads the **selected text** (Accessibility API first, clipboard fallback second, clipboard always restored) and offers **Translate · Explain · Define · Summarize · Rewrite · Fix grammar** or *Ask anything* about it.
 - **⌥⇧P** — turn the pet on/off. Both shortcuts are configurable.
 - **Chat** — click the pet (quick menu) or double-click it (chat). Compact bubble, streaming answers, short history.
@@ -33,7 +40,9 @@ Built with **Tauri 2 + Rust + TypeScript** (no Electron, no frontend framework) 
 - **Moods & wardrobe** — Lucy's mood (confident, focused, dreamy, sleepy, playful, melancholy) follows the time of day and how you use her; in *auto* mode she changes outfit and hair when it shifts (26 outfits: her anime leotard with the off-shoulder jacket, bodysuits, dresses, a crop top with shorts, a bikini, a high-cut swimsuit, gym wear, casual jeans looks, an office blouse and pencil skirt, a teacher look, sister habits in black and white, a commander uniform, lingerie sets, a saree and more). Pick one yourself in Settings or the right-click menu.
 - **Her voice** — a calm, low, unhurried delivery on the best installed macOS voice (Premium/Enhanced first); pace and pitch follow her mood. Her replies have a light Night City flavour; utility tasks return clean results.
 - **Three looks** — built-in drawing, a **3D VRM model** (procedural idle/walk/talk/think/sleep animation, blinking, lip movement, hair physics, one model per outfit if you like), or **anime clips / animated images** per state.
-- **Lightweight** — the built-in look sits completely still between occasional blinks; ~33 KB of gzipped JS; the 3D engine loads only if you pick a 3D model; no work at all while hidden.
+- **Themes** — bubble in light, dark, auto, or a neon **Night City** look.
+- **Updates** — Settings → Updates checks GitHub for a newer release (manual, or daily if you turn it on).
+- **Lightweight** — the built-in look sits completely still between occasional blinks; ~40 KB of gzipped JS; the 3D engine loads only if you pick a 3D model; no work at all while hidden.
 
 ## Quick start (macOS 13 Ventura or later)
 
@@ -117,10 +126,13 @@ xattr -cr "/Applications/AI Pet.app"
 | Press **⌥P** with nothing selected | "I couldn't find selected text. Type or paste something for me." |
 | Press **⌥P** again while open | Refresh: cancels the old answer, re-reads the selection, moves the pet |
 | Type in *Ask me anything…* | Asks about the selected text (it's included automatically) |
-| **Click** the pet | Quick menu: Chat · Translate clipboard · Settings · Pause roaming |
+| **Click** the pet | Quick menu: Chat · Tools · Translate clipboard · Change outfit · Settings · Pause roaming |
+| Click **🎤** / hold **⌥L** | Talk instead of typing (needs *Voice input* on) |
+| Say **"Hey Lucy…"** | She answers and listens (needs *Answer when I call her* on) |
+| Type or say **"what can you do"** | The list of things she can do |
 | **Double-click** the pet | Chat |
 | **Drag** the pet | Moves it; position is remembered |
-| **Right-click** the pet | Chat · Settings · Pause/Resume roaming · Mute · Pet enabled · Launch at startup · Quit |
+| **Right-click** the pet | Chat · Settings · Movement (move / stay still / float / walk) · Outfit · Focus session · Mute · Pet enabled · Launch at startup · Quit |
 | **Esc** / × / click elsewhere | Close the bubble (answers stay until you close them) |
 | **⌥⇧P** | Pet on/off |
 | Menu bar 🤖 | Pet / Roaming / Voice toggles, Chat, Settings, Quit |
@@ -194,11 +206,34 @@ Then **Settings → Character → Look: Anime clips / images → Idle → Choose
 - Use footage you have the right to use, for your own desktop, and keep the output files out of
   the repository.
 
+## Voice, tools and search
+
+| Tools (click her → Tools) | Voice + neon theme |
+| --- | --- |
+| <img src="docs/screenshots/tools.png" width="330" alt="Offline tools"> | <img src="docs/screenshots/voice.png" width="330" alt="Voice reminder in the Night City theme"> |
+
+- **Voice input:** Settings → Voice → *Voice input*. Then:
+  - click 🎤, or hold **⌥L** while you speak;
+  - pick **macOS** recognition (on-device, free) or **Whisper** (OpenAI, Groq or a local server;
+    needed for Bangla).
+- **"Hey Lucy":** Settings → Voice → *Answer when I call her*.
+  - The mic stays on and macOS shows the orange dot, but recognition runs on this Mac only.
+  - Only what's meant for her gets used; everything else is ignored.
+- **Web search:** Settings → Search. Add either:
+  - a **Google** API key plus a Programmable Search Engine ID (programmablesearchengine.google.com,
+    set to search the whole web), or
+  - a **Brave Search** key.
+
+  Google's API is closed to new sign-ups, so if you can't get a Google key, use Brave.
+
 ## Permissions
 
-Only **Accessibility** (to read the selection when you press ⌥P, and to post Cmd+C for the
-clipboard fallback). No camera, microphone, location, contacts or photos. Details and the exact
-reasoning: [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+- **Accessibility:** to read the selection when you press ⌥P, and to post Cmd+C for the clipboard
+  fallback.
+- **Microphone + Speech Recognition:** only if you turn on voice input.
+
+No camera, location, contacts or photos. Details and the exact reasoning:
+[`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
 
 ## Project layout
 
@@ -225,9 +260,9 @@ More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Development
 
 ```bash
-npm test               # 90 TypeScript unit tests (Vitest)
+npm test               # 136 TypeScript unit tests (Vitest)
 npm run typecheck
-cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings   # 34 Rust tests
+cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings   # 48 Rust tests
 ```
 
 Manual and performance test checklists: [`docs/TESTING.md`](docs/TESTING.md). Logs:
@@ -235,21 +270,30 @@ Manual and performance test checklists: [`docs/TESTING.md`](docs/TESTING.md). Lo
 
 ## Status against the guide
 
-Implemented: everything in versions 0.1–0.4 of the roadmap (pet window, idle animation, roaming,
-on/off, global hotkey, chat, selected text via Accessibility + clipboard fallback, all utility
-tasks, streaming, TTS + talking animation, menu bar, settings, Keychain, launch at login,
-multi-monitor, custom hotkeys, pet positioning), plus request cancellation (§69) and
-multi-Space/full-screen visibility (§68).
+**Done:**
+- **Versions 0.1–0.4:** pet window, idle animation, roaming, on/off, global hotkey, chat, selected
+  text via Accessibility with clipboard fallback, all utility tasks, streaming, TTS and talking
+  animation, menu bar, settings, Keychain, launch at login, multi-monitor, custom hotkeys, pet
+  positioning.
+- **Version 0.5:** voice input (push-to-talk and "Hey Lucy"), local AI (Ollama / LM Studio), custom
+  pets (3D VRM and clips), themes, and task plugins (§63): offline tools, pet commands, web search,
+  explain code.
+- **Guide sections:** request cancellation (§69), multi-Space/full-screen visibility (§68), and the
+  release pipeline with update check (§67).
 
-Deliberate choices / not yet done:
+Deliberate choices:
 
 - **Vanilla TypeScript instead of React `.tsx`** — same components, zero framework weight.
-- **AI requests run in Rust**, not in the webview, so API keys never enter JavaScript. The TS
-  `AIProvider` interface is unchanged; `NativeAIProvider` streams through a Tauri channel.
-- **Speech** uses the Web Speech API (backed by the same macOS voices as `AVSpeechSynthesizer`)
-  with the native `say` command as an automatic fallback.
-- **Idle click-through** uses hover hit-testing so the pet stays clickable/draggable while clicks
-  anywhere else pass through to your apps.
-- **Voice input** (v0.5) is prepared as a disabled setting; the **auto-updater** needs your own
-  signing key and update server, so it's documented but not wired up.
-- Code signing + notarization need your Apple Developer ID (see `docs/DISTRIBUTION.md`).
+- **AI, search and speech-to-text requests run in Rust**, not in the webview, so keys never enter
+  JavaScript. The TS `AIProvider` interface is unchanged; `NativeAIProvider` streams through a
+  Tauri channel.
+- **Speech output** uses the Web Speech API (backed by the same macOS voices as
+  `AVSpeechSynthesizer`), with the native `say` command as an automatic fallback.
+- **Idle click-through** uses hover hit-testing, so the pet stays clickable and draggable while
+  clicks anywhere else pass through to your apps.
+- **Updates** are checked against GitHub Releases and installed by hand. Fully automatic updates
+  (`tauri-plugin-updater`) need your own signing key; see `docs/DISTRIBUTION.md`.
+
+The one item only you can do: **Developer ID signing and notarization** (Definition of Done §58)
+needs your Apple Developer account. Add the secrets listed in `docs/DISTRIBUTION.md`, and the
+release workflow signs and notarizes automatically.

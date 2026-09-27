@@ -32,6 +32,15 @@ describe("TaskRunner", () => {
     ]);
   });
 
+  it("adds Explain code only when the selection looks like code", () => {
+    const runner = new TaskRunner(fakeProvider().provider, prefs);
+    const code = "function add(a, b) {\n  return a + b;\n}\nconst x = add(1, 2);";
+    expect(runner.menuTasks(code).map((t) => t.id)).toContain("code");
+    expect(runner.menuTasks("Photosynthesis turns light into energy; plants need it.").map((t) => t.id)).not.toContain("code");
+    const python = "def greet(name):\n    print(f'hi {name}')\n\nimport os\nfor f in os.listdir('.'):\n    greet(f)";
+    expect(runner.menuTasks(python).map((t) => t.id)).toContain("code");
+  });
+
   it("runs every task through the same provider and trims the result", async () => {
     const { provider, calls } = fakeProvider();
     const runner = new TaskRunner(provider, prefs);

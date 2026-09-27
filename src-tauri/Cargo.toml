@@ -1,6 +1,6 @@
 [package]
 name = "ai-pet"
-version = "0.1.0"
+version = "1.0.0"
 description = "A tiny, lightweight AI desktop pet"
 authors = ["asifuddin01"]
 edition = "2021"
@@ -30,8 +30,13 @@ url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSGeometry", "NSObject"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSGeometry", "NSObject", "NSDictionary", "NSError", "NSLocale", "NSURL", "NSValue"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSResponder", "NSScreen", "NSRunningApplication", "NSWorkspace", "NSGraphics", "objc2-core-foundation", "libc"] }
+# Voice input: microphone permission, Apple speech recognition, recording for Whisper.
+block2 = "0.6"
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "AVCaptureDevice", "AVMediaFormat"] }
+objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "block2", "AVAudioBuffer", "AVAudioEngine", "AVAudioFormat", "AVAudioIONode", "AVAudioNode", "AVAudioRecorder", "AVAudioSettings", "AVAudioTime", "AVAudioTypes"] }
+objc2-speech = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-avf-audio", "SFSpeechRecognitionRequest", "SFSpeechRecognitionResult", "SFSpeechRecognitionTask", "SFSpeechRecognizer", "SFTranscription"] }
 core-foundation = "0.10"
 security-framework = "3"
 

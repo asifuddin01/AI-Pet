@@ -5,12 +5,28 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import type { Note } from "../tools/notes";
 import type { AppStatus, Point, ProviderId, Rect, SaveResult, ScreenInfo, Settings } from "../types";
 
 export interface CharacterList {
   vrm: string[];
   /** pet state → stored file name */
   sprites: Record<string, string>;
+}
+
+export interface SearchResult {
+  title: string;
+  link: string;
+  snippet: string;
+  site: string;
+}
+
+export interface UpdateInfo {
+  current: string;
+  /** null until a release is published. */
+  latest: string | null;
+  newer: boolean;
+  url: string;
 }
 
 export interface WireMessage {
@@ -22,6 +38,12 @@ export interface AiWireRequest {
   system: string;
   messages: WireMessage[];
 }
+
+export type VoiceEvent =
+  | { event: "started" }
+  | { event: "partial"; data: { text: string } }
+  | { event: "final"; data: { text: string } }
+  | { event: "error"; data: { kind: "permission" | "not_configured" | "unavailable" | "network" | "failed"; message: string } };
 
 export type StreamEvent =
   | { event: "delta"; data: { text: string } }
@@ -81,6 +103,25 @@ export const native = {
   ttsSpeak: (text: string, voice: string | null, rate: number) =>
     invoke<boolean>("tts_speak", { text, voice, rate }),
   ttsStop: () => invoke<void>("tts_stop"),
+
+  /** push: mic button / talk key · handsFree: follow-up after "Hey Lucy" · wake: the name listener. */
+  voiceStart: (onEvent: Channel<VoiceEvent>, mode: "push" | "handsFree" | "wake" = "push") =>
+    invoke<void>("voice_start", { onEvent, mode }),
+  getIdleSeconds: () => invoke<number>("get_idle_seconds"),
+  voiceStop: () => invoke<void>("voice_stop"),
+  voiceCancel: () => invoke<void>("voice_cancel"),
+  setSttKey: (key: string) => invoke<void>("set_stt_key", { key }),
+  deleteSttKey: () => invoke<void>("delete_stt_key"),
+
+  getNotes: () => invoke<Note[]>("get_notes"),
+  saveNotes: (notes: Note[]) => invoke<void>("save_notes", { notes }),
+
+  webSearch: (query: string) => invoke<SearchResult[]>("web_search", { query }),
+  openSearchResult: (url: string) => invoke<void>("open_search_result", { url }),
+  setSearchKey: (key: string) => invoke<void>("set_search_key", { key }),
+  deleteSearchKey: () => invoke<void>("delete_search_key"),
+  checkForUpdate: () => invoke<UpdateInfo>("check_for_update"),
+  openReleasePage: (url: string) => invoke<void>("open_release_page", { url }),
 
   openSettingsWindow: () => invoke<void>("open_settings_window"),
   quitApp: () => invoke<void>("quit_app"),

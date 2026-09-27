@@ -21,7 +21,8 @@ export interface ScreenInfo {
 }
 
 export type ProviderId = "openai" | "anthropic";
-export type RoamArea = "bottom" | "anywhere";
+/** "float": she hovers around the whole screen instead of walking. */
+export type RoamArea = "bottom" | "anywhere" | "float";
 
 export interface Settings {
   petEnabled: boolean;
@@ -32,6 +33,8 @@ export interface Settings {
 
   hotkey: string;
   toggleHotkey: string;
+  /** Hold to talk (registered only while voice input is on). */
+  talkHotkey: string;
 
   aiEnabled: boolean;
   provider: ProviderId;
@@ -46,9 +49,22 @@ export interface Settings {
   voice: string;
   speechRate: number;
   voiceInput: boolean;
+  /** "apple" (macOS speech recognition) or "whisper" (OpenAI-compatible transcription). */
+  speechEngine: "apple" | "whisper";
+  /** BCP-47 tag, "" = the Mac's language. */
+  speechLanguage: string;
+  sttBaseUrl: string;
+  sttModel: string;
+  /** "Hey Lucy": listen (on-device) for her name. Needs voiceInput. */
+  wakeWord: boolean;
+  /** Now and then she offers help or asks how she looks. */
+  checkIns: boolean;
+  checkInEvery: "rare" | "sometimes" | "often";
 
   petSize: number;
   animationSpeed: number;
+  /** Bubble look: "auto" follows macOS. */
+  theme: "auto" | "light" | "dark" | "neon";
   /** "auto" (Lucy picks by mood) or an outfit id. */
   outfit: string;
   /** What she's wearing right now (remembered across restarts). */
@@ -58,6 +74,14 @@ export interface Settings {
   vrmModel: string;
   /** Optional per-outfit 3D models: outfit id → model file. */
   outfitModels: Record<string, string>;
+
+  /** Web search: "google" (Programmable Search, key + engine ID) or "brave". */
+  searchProvider: "google" | "brave";
+  searchEngineId: string;
+
+  /** Daily check for a newer release (off by default). */
+  checkUpdates: boolean;
+  skippedVersion: string;
 
   firstRunCompleted: boolean;
   accessibilityPrompted: boolean;
@@ -76,6 +100,8 @@ export interface AppStatus {
   hotkeyWarnings: string[];
   aiConfigured: boolean;
   hasApiKey: boolean;
+  hasSttKey: boolean;
+  hasSearchKey: boolean;
 }
 
 export interface HotkeyEvent {

@@ -57,6 +57,19 @@ describe("AnimationController", () => {
     });
   });
 
+  it("hovers instead of walking in float mode", () => {
+    const v = view();
+    const anim = new AnimationController(v, () => 0.5, { setTimeout: () => 1, clearTimeout: () => undefined });
+    anim.apply("WALKING");
+    expect(v.setAnimation).toHaveBeenLastCalledWith("walk");
+    anim.setFloating(true);
+    expect(v.setAnimation).toHaveBeenLastCalledWith("float");
+    anim.apply("IDLE");
+    expect(v.setAnimation).toHaveBeenLastCalledWith("idle");
+    anim.apply("WALKING");
+    expect(v.setAnimation).toHaveBeenLastCalledWith("float");
+  });
+
   it("pauses everything and schedules nothing when off", () => {
     const v = view();
     const timers = { setTimeout: vi.fn(), clearTimeout: vi.fn() };

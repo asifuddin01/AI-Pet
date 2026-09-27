@@ -13,11 +13,17 @@ import { Pet } from "../components/Pet";
 import { SpritePet } from "../components/SpritePet";
 import type { MenuButton } from "../components/TaskMenu";
 import { ClipboardService } from "../services/ClipboardService";
-import { log, native, on } from "../services/native";
+import { log, native, on, type SearchResult } from "../services/native";
 import { SelectedTextService } from "../services/SelectedTextService";
 import { SettingsService } from "../services/SettingsService";
 import { cleanForSpeech, SentenceStreamer } from "../services/speech";
 import { TTSService } from "../services/TTSService";
+import { VoiceService } from "../services/VoiceService";
+import { Toolbox, type ToolReply } from "../tools";
+import { CAPABILITIES, parsePetCommand, type PetCommand } from "../tools/petCommands";
+import { parseSearch } from "../tools/search";
+import { wakeReply } from "../tools/wake";
+import { WakeService, type Wake } from "../services/WakeService";
 import type { AppStatus, HotkeyEvent, Point, ScreenInfo, SelectedTextEvent, Settings } from "../types";
 import { formatShortcut } from "../util/shortcut";
 import { AnimationController } from "./AnimationController";
@@ -37,7 +43,7 @@ import {
   type ExpandedLayout,
 } from "./PetPosition";
 import { PetStateMachine } from "./PetState";
-import { RoamingController } from "./RoamingController";
+import { RoamingController, walkDurationMs } from "./RoamingController";
 import {
   decideMood,
   MOOD_INFO,
@@ -65,6 +71,26 @@ const BUBBLE_ESTIMATE = 260;
 /** How often Lucy reconsiders her mood (and maybe her outfit). */
 const MOOD_MIN_MS = 20 * 60_000;
 const MOOD_MAX_MS = 45 * 60_000;
+/** Daily update check (only when turned on in Settings). */
+const UPDATE_FIRST_MS = 60_000;
+const UPDATE_EVERY_MS = 24 * 3_600_000;
+/** Minutes between check-ins ("need anything?", "how do I look?"). */
+const CHECK_IN_MINUTES: Record<Settings["checkInEvery"], [number, number]> = {
+  rare: [90, 150],
+  sometimes: [40, 80],
+  often: [15, 30],
+};
+/** A check-in nobody answers closes itself. */
+const CHECK_IN_SHOW_MS = 30_000;
+const HELP_LINES = [
+  "Need a hand with anything, choom?",
+  "Stuck on something? I can translate, explain or keep time for you.",
+  "Quiet in here. Want to talk?",
+  "Anything I can do for you?",
+  "Taking a breather? I'm around if you need me.",
+];
+const LOOK_LINES = ["How do I look?", "Be honest — does this outfit work?", "New look. Thoughts?", "Rate the fit, choom."];
+const LOVE_REPLIES = ["Heh. I know. 😏", "Preem. Glad you like it. 💜", "You're sweet. I'll keep it on a while."];
 
 type View =
   | "none"
@@ -76,6 +102,8 @@ type View =
   | "result"
   | "chat"
   | "quick"
+  | "tools"
+  | "checkin"
   | "notice";
 
 interface Subject {
@@ -99,6 +127,8 @@ const FALLBACK_STATUS: AppStatus = {
   hotkeyWarnings: [],
   aiConfigured: false,
   hasApiKey: false,
+  hasSttKey: false,
+  hasSearchKey: false,
 };
 
 /**
@@ -121,7 +151,15 @@ export class PetController {
   private readonly roaming: RoamingController;
   private readonly tts: TTSService;
   private readonly runner: TaskRunner;
+  private readonly tools: Toolbox;
+  /** A Pomodoro focus block is running: she stays put and keeps a focused mood. */
+  private focusMode = false;
   private readonly selection = new SelectedTextService();
+  private readonly voice = new VoiceService();
+  /** "Hey Lucy" listener (opt-in). */
+  private readonly nameListener: WakeService;
+  private checkInTimer: ReturnType<typeof setTimeout> | undefined;
+  private checkInCloseTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly tracker = new MoodTracker();
   private mood: Mood;
   private moodTimer: ReturnType<typeof setTimeout> | undefined;
@@ -139,6 +177,7 @@ export class PetController {
   private lastAnswer = "";
   private lastTask: { task: PetTask; context: TaskContext } | null = null;
   private request: AbortController | null = null;
+  private searchResults: SearchResult[] = [];
 
   private motionWaiters = new Map<number, (arrived: boolean) => void>();
   private drag: DragState | null = null;
@@ -159,6 +198,9 @@ export class PetController {
   /** Bumped whenever the pet is placed explicitly, so late motion reports can't undo it. */
   private placementEpoch = 0;
   private onboardingStep = 0;
+  private update: { version: string; url: string } | null = null;
+  private updateTimer: ReturnType<typeof setTimeout> | undefined;
+  private offerTimer: ReturnType<typeof setTimeout> | undefined;
 
   static async create(root: HTMLElement): Promise<PetController> {
     const settings = await SettingsService.load();
@@ -181,6 +223,7 @@ export class PetController {
       onAction: (id) => void this.onAction(id),
       onSubmit: (text) => void this.onSubmit(text),
       onClose: () => void this.closeBubble(),
+      onMic: () => void this.toggleListening(),
     });
     this.anim = new AnimationController(this.character);
     this.fsm.onChange((state) => {
@@ -205,6 +248,16 @@ export class PetController {
       mood: this.mood,
     }));
 
+    this.nameListener = new WakeService({
+      onWake: (wake) => void this.onCalled(wake),
+      onUnavailable: (message) => void this.wakeUnavailable(message),
+    });
+
+    this.tools = new Toolbox(
+      { alert: (reply) => void this.toolAlert(reply), setFocus: (on) => this.setFocusMode(on) },
+      { load: () => native.getNotes(), save: (notes) => native.saveNotes(notes) },
+    );
+
     this.roaming = new RoamingController({
       getScreens: () => this.refreshScreens(),
       getPosition: () => this.petPos,
@@ -217,6 +270,7 @@ export class PetController {
       stopMotion: () => this.stopMotion(),
       onWalkStart: (direction) => {
         this.character.setFacing(direction);
+        this.anim.setFloating(this.settings.get().roamArea === "float");
         this.fsm.transition("WALKING");
       },
       onWalkEnd: (position) => {
@@ -239,6 +293,7 @@ export class PetController {
       on<boolean>("pet-toggle", (enabled) => void (enabled ? this.enable() : this.disable())),
       on<{ id: number }>("pet-arrived", ({ id }) => this.settleMotion(id, true)),
       on("open-chat", () => void this.openChat()),
+      on<{ pressed: boolean; cursor: Point }>("talk-hotkey", (e) => void this.onTalkKey(e.pressed, e.cursor)),
     ]);
     this.settings.onChange((next, prev) => this.onSettingsChanged(next, prev));
     this.bindPointer(this.character.el);
@@ -249,9 +304,59 @@ export class PetController {
     this.character.setMood(this.mood);
     if (this.settings.get().character !== "vector") await this.swapCharacter();
     // A cheap once-a-minute check that lets an ignored pet doze off.
-    setInterval(() => this.checkSleep(), 60_000);
+    setInterval(() => {
+      this.checkSleep();
+      this.syncWake();
+    }, 60_000);
     this.scheduleMood();
+    this.scheduleUpdateCheck(UPDATE_FIRST_MS);
+    this.scheduleCheckIn();
     if (this.settings.get().petEnabled) await this.enable();
+  }
+
+  // ------------------------------------------------------------------ updates
+
+  private scheduleUpdateCheck(delay = UPDATE_EVERY_MS): void {
+    clearTimeout(this.updateTimer);
+    if (!this.settings.get().checkUpdates) return;
+    this.updateTimer = setTimeout(() => void this.checkForUpdate(), delay);
+  }
+
+  private async checkForUpdate(): Promise<void> {
+    try {
+      const info = await native.checkForUpdate();
+      if (info.newer && info.latest && info.latest !== this.settings.get().skippedVersion) {
+        this.update = { version: info.latest, url: info.url };
+        await this.offerUpdate();
+      }
+    } catch {
+      // Offline or GitHub unreachable: try again tomorrow.
+    }
+    this.scheduleUpdateCheck();
+  }
+
+  /** Mention a new version once she's free, without interrupting anything. */
+  private async offerUpdate(): Promise<void> {
+    if (!this.update) return;
+    if (this.fsm.is("OFF") || this.expanded || !this.fsm.is("IDLE", "WALKING", "SLEEPING")) {
+      clearTimeout(this.offerTimer);
+      this.offerTimer = setTimeout(() => void this.offerUpdate(), 10 * 60_000);
+      return;
+    }
+    this.stopRoaming();
+    this.fsm.transition("INTERACTING");
+    await this.showBubble(
+      {
+        title: "New version of me is out",
+        text: `Version **${this.update.version}** is ready. Want to grab it?`,
+        actions: [
+          { id: "update-download", label: "Download", primary: true },
+          { id: "update-later", label: "Skip this one" },
+        ],
+      },
+      "notice",
+    );
+    this.anim.gesture("wave");
   }
 
   async enable(): Promise<void> {
@@ -286,6 +391,7 @@ export class PetController {
         this.anim.gesture("wave");
         this.scheduleRoamResume(1500);
       }
+      this.syncWake();
     })();
     try {
       await this.enabling;
@@ -298,6 +404,8 @@ export class PetController {
     if (this.fsm.is("OFF")) return;
     this.cancelRequest();
     this.tts.stop();
+    this.voice.cancel();
+    this.nameListener.setActive(false);
     this.stopRoaming();
     clearTimeout(this.resumeTimer);
     clearTimeout(this.napTimer);
@@ -396,12 +504,15 @@ export class PetController {
   private async showQuickMenu(): Promise<void> {
     const roaming = this.settings.get().roaming;
     const info = MOOD_INFO[this.mood];
+    const status = this.tools.statusLine();
     await this.showBubble(
       {
         title: info.greeting,
         subtitle: `${info.emoji} Feeling ${this.mood} · wearing ${this.character.currentOutfit.name}`,
+        text: status ?? undefined,
         tasks: [
           { id: "quick-chat", label: "Chat", icon: "💬" },
+          { id: "quick-tools", label: "Tools", icon: "🧰" },
           { id: "quick-translate-clipboard", label: "Translate clipboard", icon: "🌐" },
           { id: "quick-outfit", label: "Change outfit", icon: "✨" },
           { id: "quick-settings", label: "Settings", icon: "⚙️" },
@@ -410,6 +521,20 @@ export class PetController {
       },
       "quick",
     );
+  }
+
+  private async showTools(): Promise<void> {
+    this.fsm.transition("INTERACTING");
+    await this.showBubble(
+      {
+        title: "Tools",
+        subtitle: this.tools.statusLine() ?? "Work offline — no AI needed",
+        tasks: this.tools.buttons().map((b) => ({ id: `tool-${b.id}`, label: b.label, icon: b.icon })),
+        input: { placeholder: "Try 25*4 or timer 5 min" },
+      },
+      "tools",
+    );
+    await this.takeFocus();
   }
 
   async openChat(): Promise<void> {
@@ -477,7 +602,8 @@ export class PetController {
           title: "Hey. I'm Lucy.",
           text:
             "Your desktop netrunner. I can:\n- Chat with you\n- Translate selected text\n- Explain words\n" +
-            "- Summarize text\n- Speak my answers\n- Change outfits when the mood hits\n\n" +
+            "- Summarize text\n- Speak my answers\n- Timers, notes and quick maths, even offline\n" +
+            "- Change outfits when the mood hits\n\n" +
             `Press **${key}** anytime.`,
           actions: [{ id: "onboarding-next", label: "Nice to meet you!", primary: true }],
         },
@@ -516,7 +642,9 @@ export class PetController {
   }
 
   private taskButtons(): MenuButton[] {
-    return this.runner.menuTasks().map((h) => ({ id: h.id, label: h.label, icon: h.icon }));
+    const buttons: MenuButton[] = this.runner.menuTasks(this.subject?.text).map((h) => ({ id: h.id, label: h.label, icon: h.icon }));
+    if (this.status.hasSearchKey) buttons.push({ id: "search", label: "Search web", icon: "🔎" });
+    return buttons;
   }
 
   // ------------------------------------------------------------------ input handlers
@@ -526,6 +654,8 @@ export class PetController {
     switch (id) {
       case "quick-chat":
         return this.openChat();
+      case "quick-tools":
+        return this.showTools();
       case "quick-translate-clipboard": {
         const text = await ClipboardService.readText();
         if (!text) return this.showNotice("Nothing to translate", "Your clipboard's got no text right now, choom.");
@@ -548,6 +678,24 @@ export class PetController {
         return this.closeBubble();
       }
     }
+    if (id.startsWith("tool-")) {
+      const button = this.tools.buttons().find((b) => `tool-${b.id}` === id);
+      if (!button) return;
+      if (button.run) return this.onSubmit(button.run);
+      this.bubble.inputValue = button.prefill ?? "";
+      this.setHint(button.hint);
+      this.bubble.focusInput();
+      return;
+    }
+    if (id === "search") {
+      const text = (this.subject?.text ?? this.bubble.inputValue).trim();
+      if (!text) {
+        this.setHint("Type what to search for.");
+        this.bubble.focusInput();
+        return;
+      }
+      return this.runSearch(text.replace(/\s+/g, " ").slice(0, 200));
+    }
     // A task button: work on the selection, or on whatever the user typed/pasted.
     if (!this.subject) {
       const typed = this.bubble.inputValue.trim();
@@ -563,7 +711,78 @@ export class PetController {
 
   private async onSubmit(text: string): Promise<void> {
     this.touch();
+    // Things she does herself ("wear the saree", "float around", "go to sleep")…
+    const command = parsePetCommand(text);
+    if (command) return this.runCommand(text, command);
+    // "search for …", "google …", "weather in …"
+    const query = parseSearch(text);
+    if (query) return this.runSearch(query);
+    // …then timers, notes, maths, units and the clock, answered on the spot, offline.
+    const reply = await this.tools.handle(text).catch(() => null);
+    if (reply) return this.showToolReply(text, reply);
     await this.sendChat(text);
+  }
+
+  private async showToolReply(text: string, reply: ToolReply): Promise<void> {
+    this.cancelRequest();
+    this.tts.stop();
+    if (this.view !== "chat") {
+      this.transcript = [];
+      await this.showBubble(this.chatModel(), "chat");
+    }
+    this.fsm.transition("INTERACTING");
+    this.transcript.push({ role: "user", text }, { role: "assistant", text: reply.text });
+    // Kept in the chat history so follow-ups ("and in feet?") make sense to the AI.
+    this.history.push({ role: "user", content: text }, { role: "assistant", content: reply.text });
+    this.history = this.history.slice(-HISTORY_LIMIT);
+    this.lastAnswer = reply.text;
+    this.bubble.setTranscript(this.transcript);
+    this.scheduleRefit();
+    if (reply.gesture) this.anim.gesture(reply.gesture);
+    this.say(reply);
+    this.bubble.focusInput();
+  }
+
+  private say(reply: ToolReply): void {
+    if (!this.settings.get().speak) return;
+    const speech = reply.speech ?? cleanForSpeech(reply.text);
+    if (speech) this.tts.speak(speech, speechLangFor(speech));
+  }
+
+  /** A timer rang or a focus block changed: tell the user, wherever she is. */
+  private async toolAlert(reply: ToolReply): Promise<void> {
+    if (this.fsm.is("OFF")) {
+      this.pendingNotice = { title: reply.title, text: reply.text };
+      return;
+    }
+    this.touch();
+    if (this.expanded && this.view === "chat") {
+      this.transcript.push({ role: "assistant", text: `**${reply.title}** ${reply.text}` });
+      this.bubble.setTranscript(this.transcript);
+      this.scheduleRefit();
+    } else if (this.expanded && this.request) {
+      this.setHint(`${reply.title} ${cleanForSpeech(reply.text)}`);
+    } else {
+      this.stopRoaming();
+      await this.showNotice(reply.title, reply.text);
+    }
+    if (!this.request) this.say(reply);
+    this.anim.gesture(reply.gesture ?? "wave");
+  }
+
+  private setFocusMode(on: boolean): void {
+    this.focusMode = on;
+    if (!on) {
+      this.scheduleRoamResume();
+      return;
+    }
+    this.stopRoaming();
+    this.mood = "focused";
+    this.character.setMood(this.mood);
+    const current = this.character.currentOutfit.id;
+    if (this.settings.get().outfit === "auto" && !MOOD_OUTFITS.focused.some(([id]) => id === current)) {
+      void this.changeOutfit(pickOutfit("focused", current));
+    }
   }
 
   private async onAction(id: string): Promise<void> {
@@ -593,6 +812,39 @@ export class PetController {
       case "open-settings":
         await this.closeBubble();
         return native.openSettingsWindow();
+      case "checkin-chat":
+        return this.openChat();
+      case "checkin-tools":
+        return this.showTools();
+      case "checkin-love": {
+        this.anim.gesture("happy");
+        const line = LOVE_REPLIES[Math.floor(Math.random() * LOVE_REPLIES.length)];
+        await this.showBubble({ title: line, subtitle: this.outfitLine() }, "checkin");
+        this.say({ title: "", text: line });
+        this.closeCheckInLater(4000);
+        return;
+      }
+      case "checkin-another": {
+        const next = pickOutfit(this.mood, this.character.currentOutfit.id);
+        await this.changeOutfit(next);
+        return this.showCheckIn("look", "Better?");
+      }
+      case "checkin-dismiss":
+        return this.closeBubble();
+      case "link-1":
+      case "link-2":
+      case "link-3": {
+        const r = this.searchResults[Number(id.slice(5)) - 1];
+        if (r) await native.openSearchResult(r.link).catch((e) => this.setHint(String(e)));
+        return;
+      }
+      case "update-download":
+        if (this.update) await native.openReleasePage(this.update.url).catch(() => undefined);
+        return this.closeBubble();
+      case "update-later":
+        if (this.update) await this.settings.update({ skippedVersion: this.update.version }).catch(() => undefined);
+        this.update = null;
+        return this.closeBubble();
       case "grant-access":
         return this.grantAccess();
       case "chat":
@@ -623,6 +875,465 @@ export class PetController {
     if (this.view === "onboarding") return this.showOnboarding(2);
     const key = formatShortcut(this.settings.get().hotkey);
     this.bubble.setHint(`After allowing AI Pet in System Settings, select text and press ${key} again.`);
+  }
+
+  // ------------------------------------------------------------------ voice input
+
+  /** Mic button: start listening, or send what was said so far. */
+  private async toggleListening(): Promise<void> {
+    if (this.voice.listening) return this.voice.stop();
+    if (this.voice.active) return; // still transcribing the last one
+    await this.startListening(false);
+  }
+
+  /** Hold-to-talk shortcut: pressed → show up and listen, released → send. */
+  private async onTalkKey(pressed: boolean, cursor: Point): Promise<void> {
+    if (this.fsm.is("OFF")) return;
+    if (!pressed) {
+      await this.voice.stop();
+      return;
+    }
+    if (this.voice.active) return; // key repeat, or still transcribing
+    this.touch();
+    if (!this.expanded) {
+      this.stopRoaming();
+      await this.refreshScreens();
+      const screen = screenForPoint(cursor, this.screens) ?? primaryScreen(this.screens);
+      if (screen) {
+        const { pet, side } = placeNearCursor(cursor, this.size, screen.visibleFrame, BUBBLE_ESTIMATE);
+        this.placementEpoch++;
+        this.petPos = pet;
+        this.preferSide = side;
+      }
+      this.resetConversation();
+    }
+    await this.startListening(true);
+  }
+
+  private async startListening(hold: boolean, handsFree = false): Promise<void> {
+    const s = this.settings.get();
+    if (!s.voiceInput) {
+      return this.showNotice("Voice input is off", "Turn it on in Settings → Voice, then talk to me.", true);
+    }
+    this.touch();
+    this.cancelRequest();
+    this.tts.stop();
+    this.stopRoaming();
+    if (!this.expanded || !["chat", "tools", "tasks", "no-selection", "result"].includes(this.view)) {
+      this.fsm.transition("INTERACTING");
+      await this.showBubble(this.chatModel(), "chat");
+      await native.showPet();
+      // Hands-free: don't pull keyboard focus away from what you're doing.
+      if (!handsFree) await this.takeFocus();
+    }
+    this.fsm.transition("INTERACTING");
+    this.fsm.transition("LISTENING");
+    this.bubble.setListening(true);
+    this.setHint(hold ? "Listening… let go when you're done." : "Listening… click 🎤 again to send.");
+    this.nameListener.setActive(false);
+    await this.voice.start(
+      {
+        onListening: () => this.anim.gesture("hop"),
+        onPartial: (text) => {
+          this.bubble.inputValue = text;
+          this.scheduleRefit();
+        },
+        onFinal: (text) => {
+          this.endListeningUi();
+          if (!text) {
+            this.setHint(hold ? "I didn't catch that. Hold the key while you talk." : "I didn't catch that.");
+            return;
+          }
+          this.bubble.inputValue = "";
+          void this.onSubmit(text);
+        },
+        onError: (kind, message) => {
+          this.endListeningUi();
+          this.setHint(message);
+          log("warn", `Voice input failed (${kind})`);
+          if (kind === "permission" || kind === "not_configured") this.anim.gesture("hop");
+        },
+      },
+      // Whisper sends no live partials, so it can't tell when you've paused: click again to send.
+      // After "Hey Lucy" it's hands-free: the live engine, ending at a pause.
+      { autoStop: handsFree || (!hold && s.speechEngine === "apple"), handsFree },
+    );
+  }
+
+  private endListeningUi(): void {
+    this.bubble.setListening(false);
+    this.setHint("");
+    if (this.fsm.is("LISTENING")) this.fsm.transition("INTERACTING");
+    setTimeout(() => this.syncWake(), 300);
+  }
+
+  /** Change the hint line and let the window grow or shrink to fit it. */
+  private setHint(text: string): void {
+    if (!this.expanded) return;
+    this.bubble.setHint(text);
+    this.scheduleRefit();
+  }
+
+  // ------------------------------------------------------------------ "Hey Lucy"
+
+  /** Listen for her name only when it makes sense: on, visible, not already talking or listening. */
+  private syncWake(): void {
+    const s = this.settings.get();
+    const on =
+      s.voiceInput &&
+      s.wakeWord &&
+      !this.fsm.is("OFF") &&
+      !this.voice.active &&
+      !this.tts.speaking &&
+      !this.request;
+    this.nameListener.setActive(on);
+  }
+
+  private async wakeUnavailable(message: string): Promise<void> {
+    log("warn", "Wake word listener unavailable");
+    if (this.fsm.is("OFF")) return;
+    if (this.expanded) this.setHint(message);
+    else await this.showNotice("I can't listen for my name", message, true);
+  }
+
+  /** Someone said her name (or "I'm home"). */
+  private async onCalled(wake: Wake): Promise<void> {
+    if (this.fsm.is("OFF")) return;
+    this.touch();
+    this.stopRoaming();
+    this.cancelCheckIn();
+    if (!this.expanded || !["chat", "tools", "tasks", "no-selection", "result"].includes(this.view)) {
+      this.fsm.transition("INTERACTING");
+      await this.showBubble(this.chatModel(), "chat");
+    }
+    this.anim.gesture(wake.kind === "home" ? "wave" : "hop");
+    if (wake.kind === "request") return this.onSubmit(wake.text);
+
+    const line = wakeReply(wake);
+    if (this.view === "chat") {
+      if (wake.kind === "home") this.transcript.push({ role: "user", text: "I'm home!" });
+      this.transcript.push({ role: "assistant", text: line });
+      this.history.push(
+        { role: "user", content: wake.kind === "home" ? "I'm home!" : "Lucy?" },
+        { role: "assistant", content: line },
+      );
+      this.bubble.setTranscript(this.transcript);
+      this.scheduleRefit();
+    }
+    this.say({ title: "", text: line });
+    if (wake.kind === "home" && wake.rest) return this.onSubmit(wake.rest);
+    // Then listen for what you want, hands-free, once she's done talking.
+    await this.afterSpeech();
+    if (this.expanded && !this.voice.active) await this.startListening(false, true);
+  }
+
+  /** Resolves when she has finished speaking (or after a few seconds at most). */
+  private async afterSpeech(maxMs = 8000): Promise<void> {
+    const until = Date.now() + maxMs;
+    await new Promise((r) => setTimeout(r, 200));
+    while (this.tts.speaking && Date.now() < until) await new Promise((r) => setTimeout(r, 120));
+  }
+
+  // ------------------------------------------------------------------ things she does when asked
+
+  private outfitLine(): string {
+    const o = this.character.currentOutfit;
+    return `${o.emoji} ${o.name}`;
+  }
+
+  private async runCommand(text: string, command: PetCommand): Promise<void> {
+    const s = this.settings.get();
+    const reply = (title: string, body: string, gesture?: ToolReply["gesture"], speech?: string) =>
+      this.showToolReply(text, { title, text: body, gesture, speech });
+    const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
+
+    switch (command.kind) {
+      case "help":
+        return reply("What I can do", CAPABILITIES, "happy", "Here's what I can do.");
+      case "status": {
+        const doing = s.roaming ? (s.roamArea === "float" ? "floating around your screen" : "wandering around") : "hanging out here";
+        return reply("Me?", `Just ${doing}, wearing my ${this.outfitLine()}. Feeling ${this.mood}. You?`, "hair-touch");
+      }
+      case "outfit-status":
+        return reply("My outfit", `I'm wearing ${this.outfitLine()}.`, "hair-touch");
+      case "outfit": {
+        const next = command.id ?? pickOutfit(this.mood, this.character.currentOutfit.id);
+        const o = outfitById(next);
+        if (o.id === this.character.currentOutfit.id) return reply("Outfit", `Already wearing it — ${this.outfitLine()}.`, "happy");
+        // In "let Lucy decide" mode she keeps choosing later; a fixed outfit stays fixed.
+        if (s.outfit === "auto") await this.changeOutfit(o.id);
+        else await this.settings.update({ outfit: o.id });
+        return reply("New look", `${o.emoji} ${o.name}. How do I look?`, "hair-touch", `How do I look?`);
+      }
+      case "outfit-auto":
+        await this.settings.update({ outfit: "auto" });
+        return reply("Outfit", "Leave it to me. I'll dress for my mood.", "happy");
+      case "roam": {
+        const area = command.area ?? s.roamArea;
+        await this.settings.update({ roaming: command.on, roamArea: area });
+        if (!command.on) return reply("Okay", "Staying right here.", "happy");
+        return reply(
+          "Okay",
+          area === "float" ? "Floating around 🫧 — say \"stay still\" to stop me." : "Going for a stroll.",
+          "hop",
+        );
+      }
+      case "come": {
+        await reply("Coming", "On my way.", "hop");
+        later(700, () => void this.comeToCursor());
+        return;
+      }
+      case "sleep":
+        await reply("Nap time", "Night, choom. Poke me when you need me. 💤");
+        later(1800, () => void this.closeBubble().then(() => this.goToSleep()));
+        return;
+      case "wake":
+        this.wake();
+        return reply("I'm up", "I'm awake, I'm awake.", "happy");
+      case "shush":
+        this.tts.stop();
+        return this.closeBubble();
+      case "mute":
+        if (command.on) {
+          await this.settings.update({ speak: false });
+          return reply("Quiet mode", "Going quiet. Say \"talk to me\" to hear me again.");
+        }
+        await this.settings.update({ speak: true });
+        return reply("I'm back", "There's my voice. Missed me?", "happy");
+      case "hide": {
+        const key = formatShortcut(s.toggleHotkey);
+        await reply("See you", `Hiding. Press ${key} to bring me back.`, "wave");
+        later(1800, () => void this.settings.update({ petEnabled: false }));
+        return;
+      }
+      case "bye":
+        this.anim.gesture("wave");
+        this.say({ title: "", text: "Later, choom." });
+        later(900, () => void this.closeBubble());
+        return;
+      case "settings":
+        await this.closeBubble();
+        return native.openSettingsWindow();
+      case "translate-clipboard":
+        return this.onTask("quick-translate-clipboard");
+      case "gesture":
+        if (command.gesture === "dance") {
+          const moves: ToolReply["gesture"][] = ["hop", "happy", "hop", "wave"];
+          moves.forEach((g, i) => later(i * 650, () => g && this.anim.gesture(g)));
+          return reply("💃", "Like this?");
+        }
+        this.anim.gesture(command.gesture);
+        return reply(command.gesture === "wave" ? "👋" : "✨", command.gesture === "wave" ? "Hey there!" : "Heh.");
+    }
+  }
+
+  /** Look something up on the web, then (if an AI is set up) answer from the results with sources. */
+  private async runSearch(query: string): Promise<void> {
+    const req = this.beginRequest();
+    const base: BubbleModel = { title: "Searching the web…", subtitle: `🔎 ${query}` };
+    this.fsm.transition("INTERACTING");
+    this.fsm.transition("THINKING");
+    await this.showBubble({ ...base, text: "", textState: "thinking" }, "result");
+    let results: SearchResult[];
+    try {
+      results = await native.webSearch(query);
+    } catch (e) {
+      if (req !== this.request) return;
+      this.request = null;
+      const message = String(e);
+      await this.showBubble(
+        {
+          ...base,
+          title: "Search",
+          text: message,
+          textState: "error",
+          actions: /Settings/.test(message)
+            ? [{ id: "open-settings", label: "Open Settings", primary: true }, { id: "back", label: "Back" }]
+            : [{ id: "back", label: "Back" }],
+        },
+        "result",
+      );
+      this.fsm.transition("INTERACTING");
+      return;
+    }
+    if (req !== this.request) return;
+    this.searchResults = results;
+    const sources = results.map((r, i) => `${i + 1}. **${r.title}** — ${r.site}`).join("\n");
+    const linkButtons: MenuButton[] = results
+      .slice(0, 3)
+      .map((r, i) => ({ id: `link-${i + 1}`, label: `${i + 1} ${r.site}`, icon: "🔗" }));
+    if (!results.length) {
+      this.request = null;
+      this.fsm.transition("INTERACTING");
+      await this.showBubble({ ...base, title: "Search", text: `Nothing came up for “${query}”.`, input: { placeholder: "Try other words…" } }, "result");
+      return;
+    }
+    const listOnly = async (note?: string) => {
+      this.request = null;
+      this.lastAnswer = sources;
+      await this.showBubble(
+        {
+          ...base,
+          title: "From the web",
+          text: `${results.map((r, i) => `${i + 1}. **${r.title}** — ${r.snippet}`).join("\n")}${note ? `\n\n${note}` : ""}`,
+          actions: [...linkButtons, { id: "back", label: "Back", icon: "↩" }],
+          input: { placeholder: "Search again or ask a follow-up…" },
+        },
+        "result",
+      );
+      this.afterAnswer();
+    };
+    if (!this.status.aiConfigured) return listOnly();
+
+    // Let the AI read the snippets and answer, citing [1], [2]…
+    this.lastTask = null;
+    const speaker = this.makeSpeaker();
+    await this.showBubble({ ...base, title: "From the web", text: "", textState: "thinking" }, "result");
+    try {
+      const result = await this.runner.run(
+        "search",
+        { userPrompt: query, searchResults: results },
+        {
+          signal: req.signal,
+          onDelta: (delta, full) => {
+            if (this.fsm.is("THINKING")) this.fsm.transition("SPEAKING");
+            this.bubble.setText(full);
+            speaker?.push(delta.replace(/\[\d+\]/g, ""));
+            this.scheduleRefit();
+          },
+          onReset: () => {
+            this.bubble.setText("", "thinking");
+            speaker?.reset();
+            this.tts.stop();
+          },
+        },
+      );
+      if (req !== this.request) return;
+      this.request = null;
+      speaker?.flush();
+      this.lastAnswer = result.text;
+      this.history = [
+        { role: "user", content: `Search: ${query}` },
+        { role: "assistant", content: `${result.text}\n\nSources:\n${sources}` },
+      ];
+      await this.showBubble(
+        {
+          ...base,
+          title: "From the web",
+          text: `${result.text}\n\n${sources}`,
+          actions: [...linkButtons, { id: "copy", label: "Copy", icon: "📋" }],
+          input: { placeholder: "Ask a follow-up…" },
+        },
+        "result",
+      );
+      this.afterAnswer();
+    } catch (error) {
+      if (isCancellation(error) || req !== this.request) return;
+      speaker?.reset();
+      await listOnly(`(${friendlyError(error)})`);
+    }
+  }
+
+  /** Walk (or float) over to the mouse pointer. */
+  private async comeToCursor(): Promise<void> {
+    await this.closeBubble();
+    this.stopRoaming();
+    const cursor = await native.getMousePosition().catch(() => null);
+    await this.refreshScreens();
+    const screen = cursor ? screenForPoint(cursor, this.screens) : undefined;
+    if (!cursor || !screen) return;
+    const target = clampPet({ x: cursor.x - this.size / 2, y: cursor.y - this.size * 0.2 }, this.size, screen.visibleFrame);
+    const from = this.petPos;
+    this.character.setFacing(target.x < from.x ? "left" : "right");
+    this.anim.setFloating(this.settings.get().roamArea === "float");
+    this.fsm.transition("WALKING");
+    const arrived = await this.moveTo(target, walkDurationMs(from, target, this.settings.get().animationSpeed, true));
+    this.petPos = arrived ? target : this.petPos;
+    if (this.fsm.is("WALKING")) this.fsm.transition("IDLE");
+    this.anim.gesture("wave");
+    await this.savePosition();
+    this.scheduleRoamResume(ROAM_RESUME_MS * 3);
+  }
+
+  private goToSleep(): void {
+    if (this.fsm.is("OFF") || this.expanded) return;
+    this.stopRoaming();
+    this.fsm.transition("SLEEPING");
+    clearTimeout(this.napTimer);
+    this.napTimer = setTimeout(() => this.wake(), NAP_MAX_MS * 2);
+  }
+
+  // ------------------------------------------------------------------ check-ins
+
+  private scheduleCheckIn(delay?: number, kind?: "help" | "look"): void {
+    clearTimeout(this.checkInTimer);
+    const s = this.settings.get();
+    if (!s.checkIns) return;
+    const [min, max] = CHECK_IN_MINUTES[s.checkInEvery] ?? CHECK_IN_MINUTES.sometimes;
+    const ms = delay ?? (min + Math.random() * (max - min)) * 60_000;
+    this.checkInTimer = setTimeout(() => void this.maybeCheckIn(kind), ms);
+  }
+
+  /** Pop up only when she's idle, you're at the Mac, and nothing else is going on. */
+  private async maybeCheckIn(kind?: "help" | "look"): Promise<void> {
+    const idleSecs = await native.getIdleSeconds().catch(() => 0);
+    const free =
+      !this.fsm.is("OFF", "SLEEPING") &&
+      this.fsm.is("IDLE", "WALKING") &&
+      !this.expanded &&
+      !this.focusMode &&
+      !this.voice.active &&
+      !this.drag &&
+      Date.now() - this.lastInteraction > 2 * 60_000;
+    // Away from the keyboard for a while: nobody to talk to.
+    if (!free || idleSecs > 5 * 60) {
+      this.scheduleCheckIn(5 * 60_000, kind);
+      return;
+    }
+    await this.showCheckIn(kind ?? (Math.random() < 0.5 ? "look" : "help"));
+    this.scheduleCheckIn();
+  }
+
+  private async showCheckIn(kind: "help" | "look", title?: string): Promise<void> {
+    this.stopRoaming();
+    this.fsm.transition("INTERACTING");
+    const pick = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)];
+    const line = title ?? pick(kind === "look" ? LOOK_LINES : HELP_LINES);
+    await this.showBubble(
+      kind === "look"
+        ? {
+            title: line,
+            subtitle: this.outfitLine(),
+            actions: [
+              { id: "checkin-love", label: "😍 Gorgeous", primary: true },
+              { id: "checkin-another", label: "✨ Try another" },
+              { id: "checkin-dismiss", label: "Not now" },
+            ],
+          }
+        : {
+            title: line,
+            actions: [
+              { id: "checkin-chat", label: "💬 Chat", primary: true },
+              { id: "checkin-tools", label: "🧰 Tools" },
+              { id: "checkin-dismiss", label: "I'm good" },
+            ],
+          },
+      "checkin",
+    );
+    this.anim.gesture(kind === "look" ? "hair-touch" : "wave");
+    this.say({ title: "", text: line });
+    this.closeCheckInLater(CHECK_IN_SHOW_MS);
+  }
+
+  private closeCheckInLater(ms: number): void {
+    clearTimeout(this.checkInCloseTimer);
+    this.checkInCloseTimer = setTimeout(() => {
+      if (this.view === "checkin") void this.closeBubble();
+    }, ms);
+  }
+
+  private cancelCheckIn(): void {
+    clearTimeout(this.checkInCloseTimer);
   }
 
   // ------------------------------------------------------------------ AI work
@@ -787,6 +1498,7 @@ export class PetController {
   private afterAnswer(): void {
     if (!this.tts.speaking && this.fsm.is("THINKING", "SPEAKING")) this.fsm.transition("INTERACTING");
     this.bubble.focusInput();
+    this.syncWake();
   }
 
   private onError(error: unknown): void {
@@ -805,6 +1517,9 @@ export class PetController {
   }
 
   private onSpeakingChange(speaking: boolean): void {
+    // Never listen for her name while she's talking (she'd hear herself).
+    if (speaking) this.nameListener.setActive(false);
+    else setTimeout(() => this.syncWake(), 500);
     if (speaking) {
       if (this.fsm.is("THINKING", "INTERACTING", "IDLE")) this.fsm.transition("SPEAKING");
     } else if (this.fsm.is("SPEAKING") && !this.request) {
@@ -817,7 +1532,9 @@ export class PetController {
   private async showBubble(model: BubbleModel, view: View): Promise<void> {
     const opening = !this.expanded;
     this.view = view;
+    if (model.input && this.settings.get().voiceInput) model = { ...model, input: { ...model.input, mic: true } };
     this.bubble.render(model);
+    if (this.voice.listening) this.bubble.setListening(true);
     this.bubble.prepareWidth(BUBBLE_WIDTH);
     if (opening) this.bubble.el.classList.add("is-opening");
     await this.applyExpanded(this.bubble.naturalHeight(), opening ? this.preferSide : this.expanded!.side);
@@ -863,6 +1580,7 @@ export class PetController {
     if (!this.expanded) return;
     this.cancelRequest();
     this.tts.stop();
+    this.voice.cancel();
     clearTimeout(this.errorTimer);
     this.view = "none";
     this.preferSide = "above";
@@ -872,6 +1590,7 @@ export class PetController {
     void native.releaseFocus();
     this.touch();
     this.scheduleRoamResume();
+    this.syncWake();
   }
 
   private resetConversation(): void {
@@ -919,6 +1638,8 @@ export class PetController {
     this.size = petBoxSize(s.petSize);
     this.character.setScale(this.size / ART_SIZE);
     this.character.setSpeed(s.animationSpeed);
+    if (s.theme === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = s.theme;
   }
 
   // ------------------------------------------------------------------ roaming & motion
@@ -956,7 +1677,7 @@ export class PetController {
 
   private maybeStartRoaming(): void {
     const s = this.settings.get();
-    if (!s.roaming || !s.petEnabled || this.expanded || this.drag || !this.fsm.is("IDLE")) return;
+    if (!s.roaming || !s.petEnabled || this.focusMode || this.expanded || this.drag || !this.fsm.is("IDLE")) return;
     this.roaming.start();
   }
 
@@ -1068,7 +1789,7 @@ export class PetController {
 
   /** Re-read her mood; in "let Lucy decide" mode she may change clothes to match it. */
   private async moodTick(): Promise<void> {
-    this.mood = decideMood(this.tracker.signals(this.fsm.is("SLEEPING")));
+    this.mood = this.focusMode ? "focused" : decideMood(this.tracker.signals(this.fsm.is("SLEEPING")));
     this.character.setMood(this.mood);
     if (this.settings.get().outfit === "auto" && !this.fsm.is("OFF")) {
       if (this.expanded || this.drag || !this.fsm.is("IDLE", "SLEEPING")) {
@@ -1077,7 +1798,11 @@ export class PetController {
       }
       const current = this.character.currentOutfit.id;
       const suits = MOOD_OUTFITS[this.mood].some(([id]) => id === current);
-      if (!suits || Math.random() < 0.35) await this.changeOutfit(pickOutfit(this.mood, current));
+      if (!suits || Math.random() < 0.35) {
+        await this.changeOutfit(pickOutfit(this.mood, current));
+        // Fresh outfit: now and then she wants your opinion.
+        if (!this.fsm.is("SLEEPING") && Math.random() < 0.5) this.scheduleCheckIn(25_000, "look");
+      }
     }
     this.scheduleMood();
   }
@@ -1224,8 +1949,17 @@ export class PetController {
         { item: "Separator" },
         { id: "chat", text: "Chat", action: () => void this.openChat() },
         { id: "settings", text: "Settings…", action: () => void native.openSettingsWindow() },
-        { id: "pause", text: "Pause roaming", enabled: s.roaming, action: toggle({ roaming: false }) },
-        { id: "resume", text: "Resume roaming", enabled: !s.roaming, action: toggle({ roaming: true }) },
+        {
+          text: "Movement",
+          items: [
+            { id: "roam-on", text: "Move around", checked: s.roaming, action: toggle({ roaming: true }) },
+            { id: "roam-off", text: "Stay still", checked: !s.roaming, action: toggle({ roaming: false }) },
+            { item: "Separator" },
+            { id: "roam-float", text: "Float around the screen (hover)", checked: s.roamArea === "float", action: toggle({ roamArea: "float", roaming: true }) },
+            { id: "roam-anywhere", text: "Walk anywhere", checked: s.roamArea === "anywhere", action: toggle({ roamArea: "anywhere", roaming: true }) },
+            { id: "roam-bottom", text: "Walk along the bottom", checked: s.roamArea === "bottom", action: toggle({ roamArea: "bottom", roaming: true }) },
+          ],
+        },
         {
           text: "Outfit",
           items: [
@@ -1241,6 +1975,11 @@ export class PetController {
               };
             }),
           ],
+        },
+        {
+          id: "focus",
+          text: this.tools.pomodoro.running ? "Stop focus session" : "Start focus session (25 min)",
+          action: () => void this.onSubmit(this.tools.pomodoro.running ? "stop pomodoro" : "pomodoro"),
         },
         { id: "mute", text: "Mute", checked: !s.speak, action: toggle({ speak: !s.speak }) },
         { id: "enabled", text: "Pet enabled", checked: s.petEnabled, action: toggle({ petEnabled: !s.petEnabled }) },
@@ -1264,8 +2003,8 @@ export class PetController {
     // Clicking elsewhere closes a bubble that has nothing worth keeping on screen.
     window.addEventListener("blur", () => {
       setTimeout(() => {
-        if (document.hasFocus() || !this.expanded || this.request || this.drag) return;
-        const disposable = ["quick", "tasks", "no-selection", "notice"].includes(this.view) ||
+        if (document.hasFocus() || !this.expanded || this.request || this.drag || this.voice.active) return;
+        const disposable = ["quick", "tools", "tasks", "no-selection", "notice", "checkin"].includes(this.view) ||
           (this.view === "chat" && this.transcript.length === 0);
         if (disposable && !this.bubble.inputValue.trim()) void this.closeBubble();
       }, 150);
@@ -1275,6 +2014,7 @@ export class PetController {
   // ------------------------------------------------------------------ settings
 
   private onSettingsChanged(next: Settings, prev: Settings): void {
+    if (next.theme !== prev.theme) this.applyAppearance();
     if (next.petSize !== prev.petSize || next.animationSpeed !== prev.animationSpeed) {
       this.applyAppearance();
       if (!this.fsm.is("OFF")) {
@@ -1289,6 +2029,21 @@ export class PetController {
       else this.stopRoaming();
     }
     if (prev.speak && !next.speak) this.tts.stop();
+    if (next.checkUpdates !== prev.checkUpdates) this.scheduleUpdateCheck(UPDATE_FIRST_MS);
+    if (prev.voiceInput && !next.voiceInput) {
+      this.voice.cancel();
+      this.endListeningUi();
+    }
+    if (
+      next.wakeWord !== prev.wakeWord ||
+      next.voiceInput !== prev.voiceInput ||
+      next.speechLanguage !== prev.speechLanguage
+    ) {
+      this.nameListener.setActive(false);
+      this.nameListener.reset();
+      this.syncWake();
+    }
+    if (next.checkIns !== prev.checkIns || next.checkInEvery !== prev.checkInEvery) this.scheduleCheckIn();
     const modelsChanged =
       next.vrmModel !== prev.vrmModel || JSON.stringify(next.outfitModels) !== JSON.stringify(prev.outfitModels);
     if (next.character !== prev.character || (next.character === "vrm" && modelsChanged)) {

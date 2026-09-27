@@ -14,12 +14,16 @@ mod geometry;
 mod hotkey;
 #[cfg(target_os = "macos")]
 mod macos;
+mod notes;
 mod screens;
+mod search;
 mod secrets;
 mod selection;
 mod settings;
 mod tray;
 mod tts;
+mod updates;
+mod voice;
 mod window;
 
 use std::sync::atomic::AtomicU64;
@@ -34,6 +38,9 @@ pub struct AppState {
     pub pet: window::PetWindowState,
     pub ai: ai::AiState,
     pub tts: tts::TtsState,
+    pub voice: voice::VoiceState,
+    /// Links from the latest web search: the only ones the UI may ask to open.
+    pub search_links: Mutex<Vec<String>>,
     pub activation_seq: AtomicU64,
     pub hotkey_warnings: Mutex<Vec<String>>,
 }
@@ -47,6 +54,7 @@ pub fn quit(app: &AppHandle) {
 fn shutdown(app: &AppHandle) {
     hotkey::unregister_all(app);
     tts::stop(app);
+    voice::cancel(app);
     if let Some(state) = app.try_state::<AppState>() {
         state.ai.cancel_all();
         if let Ok(s) = state.settings.read() {
@@ -90,6 +98,8 @@ pub fn run() {
                 pet: window::PetWindowState::default(),
                 ai: ai::AiState::default(),
                 tts: tts::TtsState::default(),
+                voice: voice::VoiceState::default(),
+                search_links: Mutex::new(Vec::new()),
                 activation_seq: AtomicU64::new(0),
                 hotkey_warnings: Mutex::new(Vec::new()),
             });
@@ -154,6 +164,20 @@ pub fn run() {
             commands::delete_character_file,
             commands::tts_speak,
             commands::tts_stop,
+            commands::get_notes,
+            commands::save_notes,
+            commands::voice_start,
+            commands::voice_stop,
+            commands::voice_cancel,
+            commands::get_idle_seconds,
+            commands::set_stt_key,
+            commands::delete_stt_key,
+            commands::check_for_update,
+            commands::web_search,
+            commands::open_search_result,
+            commands::set_search_key,
+            commands::delete_search_key,
+            commands::open_release_page,
             commands::open_settings_window,
             commands::quit_app,
             commands::app_log,

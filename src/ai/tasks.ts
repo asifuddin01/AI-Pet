@@ -1,7 +1,7 @@
 import type { ChatMessage } from "./AIProvider";
 import { PromptBuilder, type BuiltPrompt, type PromptPrefs } from "./PromptBuilder";
 
-export type PetTask = "chat" | "translate" | "define" | "explain" | "summarize" | "rewrite" | "grammar" | "ask";
+export type PetTask = "chat" | "translate" | "define" | "explain" | "code" | "summarize" | "rewrite" | "grammar" | "ask" | "search";
 
 export interface TaskContext {
   selectedText?: string;
@@ -10,6 +10,8 @@ export interface TaskContext {
   language?: string;
   clipboardText?: string;
   history?: ChatMessage[];
+  /** Web results the answer should be based on (search task). */
+  searchResults?: { title: string; link: string; snippet: string; site: string }[];
 }
 
 export interface TaskResult {
@@ -32,6 +34,8 @@ export interface PetTaskHandler {
   needsText: boolean;
   /** Offered as a button when text is selected. */
   inMenu: boolean;
+  /** Only offered when this returns true for the selected text. */
+  showFor?: (text: string) => boolean;
   buildPrompt(context: TaskContext, prefs: PromptPrefs): BuiltPrompt;
 }
 
@@ -60,6 +64,38 @@ export const ExplainTask: PetTaskHandler = {
   needsText: true,
   inMenu: true,
   buildPrompt: (c) => PromptBuilder.explain(withSubject(c)),
+};
+
+/**
+ * Rough "is this source code?" check: a few strong signals (keywords at line starts,
+ * braces and semicolons at line ends, arrows, tags) — prose rarely hits two of them.
+ */
+export function looksLikeCode(text: string): boolean {
+  const sample = text.slice(0, 4000);
+  const lines = sample.split("\n").filter((l) => l.trim());
+  if (!lines.length) return false;
+  let score = 0;
+  const keyword =
+    /^\s*(?:function|def|class|import|from\s+\S+\s+import|export|const|let|var|return|if\s*\(|for\s*\(|while\s*\(|public|private|fn|struct|impl|package|#include|using|SELECT|INSERT|UPDATE|CREATE)\b/i;
+  const keywordLines = lines.filter((l) => keyword.test(l)).length;
+  if (keywordLines) score += keywordLines >= 2 ? 2 : 1;
+  const endings = lines.filter((l) => /[;{}]\s*$/.test(l)).length;
+  if (endings / lines.length > 0.3) score += 2;
+  else if (endings) score += 1;
+  if (/=>|->|::|\+\+|&&|\|\||!==|===|<\/\w+>|\w+\([^)]*\)\s*[{:]/.test(sample)) score += 1;
+  if (/^\s{2,}\S/m.test(sample) && lines.length > 1) score += 1;
+  return score >= 3;
+}
+
+export const CodeTask: PetTaskHandler = {
+  id: "code",
+  label: "Explain code",
+  icon: "🧑‍💻",
+  title: "Code explained",
+  needsText: true,
+  inMenu: true,
+  showFor: looksLikeCode,
+  buildPrompt: (c) => PromptBuilder.code(withSubject(c)),
 };
 
 export const DefineTask: PetTaskHandler = {
@@ -112,6 +148,17 @@ export const AskTask: PetTaskHandler = {
   buildPrompt: (c, prefs) => PromptBuilder.ask(withSubject(c), prefs),
 };
 
+/** Answers a question from web results the pet fetched (the model doesn't browse). */
+export const SearchTask: PetTaskHandler = {
+  id: "search",
+  label: "Search web",
+  icon: "🔎",
+  title: "From the web",
+  needsText: false,
+  inMenu: false,
+  buildPrompt: (c) => PromptBuilder.search(c),
+};
+
 export const ChatTask: PetTaskHandler = {
   id: "chat",
   label: "Chat",
@@ -124,11 +171,13 @@ export const ChatTask: PetTaskHandler = {
 
 export const DEFAULT_TASKS: PetTaskHandler[] = [
   TranslateTask,
+  CodeTask,
   ExplainTask,
   DefineTask,
   SummarizeTask,
   RewriteTask,
   GrammarTask,
   AskTask,
+  SearchTask,
   ChatTask,
 ];

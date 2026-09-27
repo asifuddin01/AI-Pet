@@ -10,12 +10,15 @@ Sandbox blocks both, so the app is distributed as a **notarized `.dmg`** outside
 - `bundle.targets`: `app`, `dmg`
 - `bundle.macOS.minimumSystemVersion`: `13.0`
 - `bundle.macOS.hardenedRuntime`: `true`
-- `bundle.macOS.entitlements`: `Entitlements.plist` — intentionally **empty**: no
-  `app-sandbox`, no `allow-jit` (WKWebView runs JS in its own process), no Apple Events (the
-  clipboard fallback uses `CGEventPost`, not AppleScript)
+- `bundle.macOS.entitlements`: `Entitlements.plist`, which grants only `device.audio-input`
+  (voice input, off by default). It deliberately has none of:
+  - `app-sandbox`
+  - `allow-jit` (WKWebView runs JS in its own process)
+  - Apple Events (the clipboard fallback uses `CGEventPost`, not AppleScript)
 - `bundle.macOS.signingIdentity`: `"-"` → **ad-hoc** signing, so builds run on Apple Silicon
   without an Apple account. Replace it (or set `APPLE_SIGNING_IDENTITY`) for real releases.
-- `Info.plist`: `LSUIElement = true` (no Dock icon / app switcher entry)
+- `Info.plist`: `LSUIElement = true` (no Dock icon / app switcher entry), plus the microphone and
+  speech-recognition usage strings for voice input
 
 ## Universal build
 
@@ -56,7 +59,34 @@ use of an ad-hoc build: `xattr -cr "/Applications/AI Pet.app"`.
 **Tip:** TCC remembers the Accessibility grant per code signature. Signing every build with the
 same Developer ID means users don't have to re-grant permission after updates.
 
-## Automatic updates (recommended next step)
+## Releases from GitHub Actions
+
+`.github/workflows/release.yml` builds the universal app on a tag. You can also start it from the
+Actions tab. The `.dmg` is attached to a **draft** release; nothing is public until you press
+*Publish*.
+
+```bash
+# bump "version" in src-tauri/tauri.conf.json (and package.json / Cargo.toml), commit, then:
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+The build is Developer ID-signed and notarized **when these repository secrets exist**. Without
+them it is ad-hoc signed, and the release notes say to run `xattr -cr`.
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE` | base64 of your *Developer ID Application* `.p12` (`base64 -i cert.p12 \| pbcopy`) |
+| `APPLE_CERTIFICATE_PASSWORD` | the `.p12` export password |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | notarization (app-specific password) |
+
+## Update check (built in)
+
+**Settings → Updates** asks the GitHub Releases API for the latest published release. You can also
+turn on a daily check. If a newer version exists, Lucy offers **Download**, which opens the release
+page, and **Skip this one**. Installing stays manual (drag the new app over the old one).
+
+## Fully automatic updates (optional)
 
 Use the official `tauri-plugin-updater`:
 

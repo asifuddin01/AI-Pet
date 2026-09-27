@@ -3,12 +3,17 @@
 <plist version="1.0">
 <dict>
   <!--
-    Deliberately empty. Hardened Runtime is on (tauri.conf.json), and:
-    - NO com.apple.security.app-sandbox: the sandbox blocks the Accessibility API and
+    Hardened Runtime is on (tauri.conf.json). The only exception it needs:
+    - audio-input: voice input (off by default) records from the microphone while you
+      talk to the pet. macOS still asks for permission the first time.
+    And deliberately NOT:
+    - com.apple.security.app-sandbox: the sandbox blocks the Accessibility API and
       global hotkeys this app depends on, so it ships as a notarized .dmg instead of via
       the Mac App Store (guide §67).
-    - NO com.apple.security.cs.allow-jit: WKWebView runs JavaScript in its own process.
-    - NO apple-events: the clipboard fallback posts a keystroke via CGEvent, not AppleScript.
+    - com.apple.security.cs.allow-jit: WKWebView runs JavaScript in its own process.
+    - apple-events: the clipboard fallback posts a keystroke via CGEvent, not AppleScript.
   -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>

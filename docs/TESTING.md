@@ -3,10 +3,10 @@
 ## Automated
 
 ```bash
-npm test                                   # Vitest — 90 tests
+npm test                                   # Vitest — 136 tests
 npm run typecheck
 cd src-tauri
-cargo test                                 # 34 tests
+cargo test                                 # 48 tests
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -22,6 +22,10 @@ cargo clippy --all-targets -- -D warnings
 | Hotkeys | `src-tauri/src/hotkey.rs` — parsing, modifier requirement; `src/util/shortcut.test.ts` |
 | Language / speech | `src/ai/language.test.ts`, `src/services/speech.test.ts` |
 | Moods / wardrobe / voice | `src/pet/Wardrobe.test.ts` — mood decisions, outfit picks, mood tracker, voice choice |
+| Offline tools | `src/tools/tools.test.ts` — calculator, unit conversion, durations/clock times, timers and reminders, Pomodoro cycles, notes, world clock, routing and false positives |
+| Pet commands / "Hey Lucy" / search | `src/tools/petCommands.test.ts`, `src/tools/wake.test.ts`, `src/tools/search.test.ts`; `src/services/WakeService.test.ts` — utterance splitting, hand-off, back-off; `src-tauri/src/search.rs` — Google/Brave parsing, link safety |
+| Voice input | `src/services/VoiceService.test.ts` — partials, auto-stop, hold-to-talk, stale sessions, final fallback; `src-tauri/src/voice/*` — event format, Whisper multipart body, key rules |
+| Updates / notes | `src-tauri/src/updates.rs` — version compare, allowed release URLs; `src-tauri/src/notes.rs` — sanitizing |
 | Characters | `src/components/SpritePet.test.ts` — state fallbacks; `src/components/VrmPet.test.ts` — outfit → clothing layers; `src-tauri/src/characters.rs` — name sanitizing, asset kinds |
 
 CI (`.github/workflows/ci.yml`) runs all of the above on Linux and again on macOS, then builds the
@@ -95,3 +99,21 @@ Design choices behind these numbers: all animation is CSS transforms/opacity (Co
 macOS), the resting pet is static between occasional gestures, window movement is interpolated
 natively in Rust at ~30 fps, the click-through hover check only runs while the pet is visible,
 and no HTTP client exists until the first AI request.
+
+### Voice, commands, tools and search
+- [ ] Settings → Voice → turn on *Voice input*; click 🎤 and say "what time is it" → macOS asks for
+      the mic and speech recognition once, then she answers out loud.
+- [ ] Hold ⌥L, say "set a timer for 1 minute", let go → *Timer set*; a minute later she pings you.
+- [ ] Turn on *Answer when I call her*: say "Hey Lucy" → "Yeah? I'm listening." and she listens
+      for the rest; "I'm home" → she welcomes you; "what are you doing, Lucy?" → she answers.
+      Ordinary talk nearby is ignored.
+- [ ] Commands: "wear the saree", "change your outfit", "float around", "stay still",
+      "come here", "go to sleep", "be quiet", "talk to me", "dance", "what can you do".
+- [ ] Offline: "25*4", "10 km to miles", "remind me in 2 min to stretch", "pomodoro",
+      "note buy milk" then "notes", "time in Tokyo" (all answer with Wi-Fi off).
+- [ ] Search: add a Google key + engine ID (or Brave key) in Settings → Search, then "weather in
+      Dhaka" → answer with numbered sources; 🔗 buttons open the pages.
+- [ ] Check-ins (Appearance → Check in now and then → Often): she asks if you need anything or
+      how she looks, only while you're using the Mac; unanswered bubbles close by themselves.
+- [ ] Right-click → Movement → Float around: she hovers anywhere on screen; Stay still stops her.
+

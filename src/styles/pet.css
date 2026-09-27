@@ -10,7 +10,9 @@
   --muted: #6b6a86;
   --accent: #6f5ef0;
   --accent-2: #8a55e6;
+  --accent-soft: #7d7cf8;
   --glow: #7df3ff;
+  --bubble-shadow: 0 10px 28px rgba(20, 14, 70, 0.22), 0 2px 6px rgba(20, 14, 70, 0.1);
   --bubble-bg: rgba(255, 255, 255, 0.97);
   --bubble-line: rgba(111, 94, 240, 0.16);
   --chip-bg: #f1efff;
@@ -32,6 +34,48 @@
     --error: #ff9b73;
   }
 }
+
+/* Bubble themes (Settings → Appearance). "auto" follows macOS; the others force a look. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink: #1f1d3a;
+  --muted: #6b6a86;
+  --bubble-bg: rgba(255, 255, 255, 0.97);
+  --bubble-line: rgba(111, 94, 240, 0.16);
+  --chip-bg: #f1efff;
+  --chip-ink: #3d34a8;
+  --msg-bg: #f3f2fb;
+  --error: #c2410c;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #eceaff;
+  --muted: #a3a1c2;
+  --bubble-bg: rgba(33, 32, 54, 0.97);
+  --bubble-line: rgba(160, 150, 255, 0.22);
+  --chip-bg: #34315e;
+  --chip-ink: #dcd7ff;
+  --msg-bg: #2c2b48;
+  --error: #ff9b73;
+}
+/* Night City: black glass, cyan edges, hot-pink accents. */
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --ink: #e9fbff;
+  --muted: #86aebf;
+  --accent: #ff2e97;
+  --accent-2: #00c8ff;
+  --accent-soft: #ff5cb1;
+  --bubble-bg: rgba(8, 9, 22, 0.94);
+  --bubble-line: rgba(0, 217, 255, 0.5);
+  --chip-bg: rgba(0, 217, 255, 0.1);
+  --chip-ink: #7df3ff;
+  --msg-bg: rgba(255, 46, 151, 0.13);
+  --error: #ff7a7a;
+  --focus-ring: rgba(255, 46, 151, 0.25);
+  --bubble-shadow: 0 0 0 1px rgba(0, 217, 255, 0.2), 0 0 22px rgba(0, 217, 255, 0.28), 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+:root[data-theme="neon"] .bubble__title { text-shadow: 0 0 8px rgba(255, 46, 151, 0.55); }
 
 html,
 body {
@@ -297,6 +341,30 @@ body {
 .pet[data-anim="walk"] .pet__arm--l { animation: pet-swing-l calc(0.62s / var(--pet-speed)) ease-in-out infinite; }
 .pet[data-anim="walk"] .pet__arm--r { animation: pet-swing-r calc(0.62s / var(--pet-speed)) ease-in-out infinite; }
 
+/* Hover mode: she floats from place to place, legs trailing, shadow left behind. */
+.pet[data-anim="float"] .pet__rig {
+  animation: pet-hover calc(2.4s / var(--pet-speed)) ease-in-out infinite;
+}
+.pet[data-anim="float"] .pet__shadow {
+  animation: pet-hover-shadow calc(2.4s / var(--pet-speed)) ease-in-out infinite;
+}
+.pet[data-anim="float"] .pet__leg--l { transform: rotate(7deg); }
+.pet[data-anim="float"] .pet__leg--r { transform: rotate(-4deg); }
+.pet[data-anim="float"] .pet__arm--l { transform: rotate(10deg); }
+.pet[data-anim="float"] .pet__arm--r { transform: rotate(-10deg); }
+@keyframes pet-hover {
+  0%, 100% { transform: translateY(-5px) rotate(-1.5deg); }
+  50% { transform: translateY(-9px) rotate(1.5deg); }
+}
+@keyframes pet-hover-shadow {
+  0%, 100% { transform: scale(0.78); opacity: 0.6; }
+  50% { transform: scale(0.66); opacity: 0.4; }
+}
+.pet--sprites[data-anim="float"] img,
+.pet--sprites[data-anim="float"] video {
+  animation: pet-hover calc(2.4s / var(--pet-speed)) ease-in-out infinite;
+}
+
 .pet[data-anim="thinking"] .pet__head,
 .pet[data-anim="thinking"] .pet__hair-back { transform: rotate(-4deg); }
 .pet[data-anim="thinking"] .pet__eye { transform: translate(0.6px, -0.6px) scaleY(0.9); }
@@ -447,7 +515,7 @@ body {
   border-radius: 18px;
   background: var(--bubble-bg);
   border: 1px solid var(--bubble-line);
-  box-shadow: 0 10px 28px rgba(20, 14, 70, 0.22), 0 2px 6px rgba(20, 14, 70, 0.1);
+  box-shadow: var(--bubble-shadow);
   transform-origin: var(--tail-x, 50%) 100%;
   transition: opacity 0.16s ease, scale 0.16s ease;
 }
@@ -554,7 +622,7 @@ body {
 }
 .msg--user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #7d7cf8, var(--accent-2));
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent-2));
   color: #fff;
   border-bottom-right-radius: 5px;
 }
@@ -589,7 +657,7 @@ body {
 .chip:disabled { opacity: 0.45; cursor: default; }
 .chip--primary {
   border-color: transparent;
-  background: linear-gradient(135deg, #7d7cf8, var(--accent-2));
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent-2));
   color: #fff;
 }
 .chip__icon { font-size: 12px; }
@@ -625,14 +693,39 @@ body {
   -webkit-user-select: text;
   user-select: text;
 }
-.input-box textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(111, 94, 240, 0.15); }
+.input-box textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring, rgba(111, 94, 240, 0.15)); }
+.input-box__mic {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--bubble-line);
+  border-radius: 50%;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.input-box__mic:hover { border-color: var(--accent); }
+.input-box__mic.is-listening {
+  border-color: transparent;
+  background: #e5484d;
+  box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.5);
+  animation: mic-pulse 1.2s ease-out infinite;
+}
+.input-box.is-listening textarea { border-color: #e5484d; }
+@keyframes mic-pulse {
+  to { box-shadow: 0 0 0 8px rgba(229, 72, 77, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .input-box__mic.is-listening { animation: none; }
+}
 .input-box__send {
   flex: none;
   width: 32px;
   height: 32px;
   border: none;
   border-radius: 50%;
-  background: linear-gradient(135deg, #7d7cf8, var(--accent-2));
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent-2));
   color: #fff;
   font-size: 15px;
   font-weight: 700;

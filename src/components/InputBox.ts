@@ -2,11 +2,13 @@
 export class InputBox {
   readonly el: HTMLFormElement;
   private readonly area: HTMLTextAreaElement;
+  private readonly mic: HTMLButtonElement | null = null;
 
   constructor(
     placeholder: string,
     private readonly onSubmit: (text: string) => void,
     private readonly onEscape: () => void,
+    onMic?: () => void,
   ) {
     this.el = document.createElement("form");
     this.el.className = "input-box";
@@ -20,7 +22,19 @@ export class InputBox {
     send.className = "input-box__send";
     send.setAttribute("aria-label", "Send");
     send.textContent = "↑";
-    this.el.append(this.area, send);
+    this.el.append(this.area);
+    if (onMic) {
+      this.mic = document.createElement("button");
+      this.mic.type = "button";
+      this.mic.className = "input-box__mic";
+      this.mic.setAttribute("aria-label", "Talk to me");
+      this.mic.setAttribute("aria-pressed", "false");
+      this.mic.title = "Talk to me";
+      this.mic.textContent = "🎤";
+      this.mic.addEventListener("click", () => onMic());
+      this.el.append(this.mic);
+    }
+    this.el.append(send);
 
     this.area.addEventListener("input", () => this.autosize());
     this.area.addEventListener("keydown", (e) => {
@@ -47,6 +61,14 @@ export class InputBox {
   set value(v: string) {
     this.area.value = v;
     this.autosize();
+  }
+
+  setListening(on: boolean): void {
+    if (!this.mic) return;
+    this.mic.classList.toggle("is-listening", on);
+    this.mic.setAttribute("aria-pressed", String(on));
+    this.mic.title = on ? "Send" : "Talk to me";
+    this.el.classList.toggle("is-listening", on);
   }
 
   focus(): void {

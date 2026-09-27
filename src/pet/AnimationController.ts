@@ -1,6 +1,6 @@
 import type { PetState } from "./PetState";
 
-export type Animation = "idle" | "walk" | "thinking" | "talking" | "listening" | "error" | "sleep";
+export type Animation = "idle" | "walk" | "float" | "thinking" | "talking" | "listening" | "error" | "sleep";
 export type Gesture =
   | "blink"
   | "look-left"
@@ -63,6 +63,8 @@ const defaultTimers: Timers = {
 export class AnimationController {
   private timer: unknown = null;
   private state: PetState = "OFF";
+  /** Moving by hovering rather than walking. */
+  private floating = false;
 
   constructor(
     private view: AnimatedView,
@@ -70,9 +72,17 @@ export class AnimationController {
     private readonly timers: Timers = defaultTimers,
   ) {}
 
+  /** Walk or hover when she moves (applies from the next move). */
+  setFloating(floating: boolean): void {
+    if (floating === this.floating) return;
+    this.floating = floating;
+    if (this.state === "WALKING") this.apply(this.state);
+  }
+
   apply(state: PetState): void {
     this.state = state;
-    const animation = STATE_ANIMATION[state];
+    const base = STATE_ANIMATION[state];
+    const animation = base === "walk" && this.floating ? "float" : base;
     this.clear();
     if (!animation) {
       this.view.setPaused(true);

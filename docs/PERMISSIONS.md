@@ -39,11 +39,23 @@ The key is only read by the Rust process; the UI can only ask *whether* one is s
 Off by default. When you turn it on in Settings (or the right-click menu), a LaunchAgent is
 registered via `tauri-plugin-autostart`; turning it off removes it.
 
-## Microphone — not used in v0.1
+## Microphone + Speech Recognition — only if you turn on voice input
 
-Voice input is planned (guide §12) and appears as a disabled setting. `Info.plist` already
-contains `NSMicrophoneUsageDescription` so that enabling it later needs no plist change; the
-permission is never requested today.
+Off by default (**Settings → Voice → Voice input**). macOS asks the first time you talk to her.
+
+- **Push to talk** (🎤 button, or hold ⌥L): the mic is open only while you talk.
+  - **macOS engine:** `SFSpeechRecognizer`, on-device whenever your Mac supports the language.
+  - **Whisper engine:** records a short clip and sends it to the endpoint you configured.
+- **"Hey Lucy"** (a separate, also-off switch): the mic stays on so she can hear her name, and
+  macOS shows the orange mic dot the whole time.
+  - This mode only runs when recognition is **on-device**, so the audio never leaves your Mac.
+  - Everything that isn't meant for her is dropped at each pause.
+- Transcripts are never logged or saved.
+
+Keys: `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription` (Info.plist), and the
+hardened-runtime entitlement `com.apple.security.device.audio-input`. If you deny either
+permission, voice input explains how to allow it in *Privacy & Security* and everything else
+keeps working.
 
 ## Not requested
 
@@ -53,6 +65,13 @@ Accessibility API and global hotkeys (see `DISTRIBUTION.md`).
 
 ## Network
 
-Only when you trigger an AI action (or press *Test connection*), and only to the endpoint you
-configured. HTTPS is required except for `localhost` model servers. **Settings → AI → Allow AI
-requests** switches all AI traffic off.
+Only when you ask for something, and only to services you configured:
+
+- **AI actions** (and *Test connection*): your AI endpoint.
+- **Web search** ("search for …"): Google or Brave, sending only the query.
+- **Whisper voice input**: your speech-to-text endpoint.
+- **Check for updates**: the GitHub Releases API. This is manual, or daily only if you turn it on.
+
+HTTPS is required except for `localhost` servers. **Settings → AI → Allow AI requests** switches
+AI and search traffic off. Timers, notes, maths, unit conversion and the clock never use the
+network.

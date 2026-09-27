@@ -5,8 +5,10 @@
   <!-- Background utility: no Dock icon, no app-switcher entry (see guide §68). -->
   <key>LSUIElement</key>
   <true/>
-  <!-- Only used if voice input (off by default, not in v0.1) is ever enabled. -->
+  <!-- Voice input (off by default): asked for only the first time you talk to her. -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>AI Pet listens only while you hold the talk button, to turn your voice into a question.</string>
+  <string>AI Pet listens only while you hold the talk shortcut or the mic button is on, to turn your voice into a question.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>AI Pet turns what you say to her into text. On-device recognition is used when your Mac supports the language.</string>
 </dict>
 </plist>

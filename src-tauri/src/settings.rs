@@ -12,6 +12,10 @@ use crate::AppState;
 
 pub const DEFAULT_HOTKEY: &str = "Alt+KeyP";
 pub const DEFAULT_TOGGLE_HOTKEY: &str = "Alt+Shift+KeyP";
+/// Hold to talk (only registered while voice input is on).
+pub const DEFAULT_TALK_HOTKEY: &str = "Alt+KeyL";
+pub const DEFAULT_STT_URL: &str = "https://api.openai.com/v1";
+pub const DEFAULT_STT_MODEL: &str = "whisper-1";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "lowercase")]
@@ -36,10 +40,12 @@ impl Provider {
 #[serde(rename_all = "lowercase")]
 pub enum RoamArea {
     /// Walk along the bottom of the screen, above the Dock (least distracting).
-    #[default]
     Bottom,
     /// Wander anywhere inside the visible screen area.
     Anywhere,
+    /// Hover (float) around the whole screen instead of walking.
+    #[default]
+    Float,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -55,6 +61,7 @@ pub struct Settings {
     // Interaction
     pub hotkey: String,
     pub toggle_hotkey: String,
+    pub talk_hotkey: String,
 
     // AI
     /// Master switch: when false the app never makes AI network requests.
@@ -75,11 +82,27 @@ pub struct Settings {
     /// Voice name ("" = system default).
     pub voice: String,
     pub speech_rate: f32,
+    /// Push-to-talk speech input (off by default).
     pub voice_input: bool,
+    /// "apple" (macOS speech recognition, on-device where supported) or "whisper"
+    /// (an OpenAI-compatible `/audio/transcriptions` endpoint).
+    pub speech_engine: String,
+    /// BCP-47 language for recognition ("" = the Mac's language), e.g. "en-US", "bn-BD".
+    pub speech_language: String,
+    pub stt_base_url: String,
+    pub stt_model: String,
+    /// "Hey Lucy": keep listening (on-device only) for her name. Needs `voice_input`.
+    pub wake_word: bool,
+    /// Now and then she offers help or asks how she looks.
+    pub check_ins: bool,
+    /// "rare", "sometimes" or "often".
+    pub check_in_every: String,
 
     // Appearance
     pub pet_size: f32,
     pub animation_speed: f32,
+    /// Bubble look: "auto" (follows macOS), "light", "dark" or "neon".
+    pub theme: String,
     /// "auto" (the pet picks outfits by mood) or a fixed outfit id.
     pub outfit: String,
     /// Outfit currently worn, remembered across restarts.
@@ -90,6 +113,18 @@ pub struct Settings {
     pub vrm_model: String,
     /// Optional per-outfit VRM models (outfit id → model file).
     pub outfit_models: std::collections::BTreeMap<String, String>,
+
+    // Web search
+    /// "google" (Programmable Search: key + engine ID) or "brave".
+    pub search_provider: String,
+    /// Google Programmable Search engine ID ("cx"); not secret.
+    pub search_engine_id: String,
+
+    // Updates
+    /// Look for a newer release once a day (off by default: no network unless asked).
+    pub check_updates: bool,
+    /// A release the user said "later" to; she won't bring that one up again.
+    pub skipped_version: String,
 
     // Remembered state
     pub first_run_completed: bool,
@@ -103,10 +138,11 @@ impl Default for Settings {
             pet_enabled: true,
             roaming: true,
             roam_all_displays: false,
-            roam_area: RoamArea::Bottom,
+            roam_area: RoamArea::Float,
             launch_at_login: false,
             hotkey: DEFAULT_HOTKEY.into(),
             toggle_hotkey: DEFAULT_TOGGLE_HOTKEY.into(),
+            talk_hotkey: DEFAULT_TALK_HOTKEY.into(),
             ai_enabled: true,
             provider: Provider::OpenAi,
             preset: "openai".into(),
@@ -119,13 +155,25 @@ impl Default for Settings {
             voice: String::new(),
             speech_rate: 1.0,
             voice_input: false,
+            speech_engine: "apple".into(),
+            speech_language: String::new(),
+            stt_base_url: DEFAULT_STT_URL.into(),
+            stt_model: DEFAULT_STT_MODEL.into(),
+            wake_word: false,
+            check_ins: true,
+            check_in_every: "sometimes".into(),
             pet_size: 1.0,
             animation_speed: 1.0,
+            theme: "auto".into(),
             outfit: "auto".into(),
             current_outfit: String::new(),
             character: "vector".into(),
             vrm_model: String::new(),
             outfit_models: Default::default(),
+            search_provider: "google".into(),
+            search_engine_id: String::new(),
+            check_updates: false,
+            skipped_version: String::new(),
             first_run_completed: false,
             accessibility_prompted: false,
             last_position: None,
@@ -153,6 +201,32 @@ impl Settings {
         if self.toggle_hotkey.is_empty() {
             self.toggle_hotkey = defaults.toggle_hotkey.clone();
         }
+        self.talk_hotkey = clean(&self.talk_hotkey, 64);
+        if self.talk_hotkey.is_empty() {
+            self.talk_hotkey = defaults.talk_hotkey.clone();
+        }
+        if !matches!(self.speech_engine.as_str(), "apple" | "whisper") {
+            self.speech_engine = defaults.speech_engine.clone();
+        }
+        self.speech_language = clean(&self.speech_language, 20);
+        if !self
+            .speech_language
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            self.speech_language = String::new();
+        }
+        self.stt_base_url = clean(&self.stt_base_url, 500).trim_end_matches('/').to_string();
+        if self.stt_base_url.is_empty() {
+            self.stt_base_url = defaults.stt_base_url.clone();
+        }
+        if !matches!(self.check_in_every.as_str(), "rare" | "sometimes" | "often") {
+            self.check_in_every = defaults.check_in_every.clone();
+        }
+        self.stt_model = clean(&self.stt_model, 100);
+        if self.stt_model.is_empty() {
+            self.stt_model = defaults.stt_model.clone();
+        }
         self.preset = clean(&self.preset, 32);
         self.base_url = clean(&self.base_url, 500).trim_end_matches('/').to_string();
         self.model = clean(&self.model, 200);
@@ -166,11 +240,22 @@ impl Settings {
             self.auto_second_language = defaults.auto_second_language;
         }
         self.voice = clean(&self.voice, 200);
+        if !matches!(self.theme.as_str(), "auto" | "light" | "dark" | "neon") {
+            self.theme = defaults.theme.clone();
+        }
         self.outfit = clean(&self.outfit, 32);
         if self.outfit.is_empty() {
             self.outfit = "auto".into();
         }
         self.current_outfit = clean(&self.current_outfit, 32);
+        self.skipped_version = clean(&self.skipped_version, 32);
+        if !matches!(self.search_provider.as_str(), "google" | "brave") {
+            self.search_provider = defaults.search_provider.clone();
+        }
+        self.search_engine_id = clean(&self.search_engine_id, 64);
+        if !self.search_engine_id.is_empty() && !crate::search::valid_engine_id(&self.search_engine_id) {
+            self.search_engine_id = String::new();
+        }
         if !matches!(self.character.as_str(), "vector" | "vrm" | "sprites") {
             self.character = "vector".into();
         }
@@ -263,15 +348,23 @@ pub fn apply(app: &AppHandle, new: Settings) -> (Settings, Vec<String>) {
     let old = state.settings.read().map(|s| s.clone()).unwrap_or_default();
     let mut warnings = Vec::new();
 
-    if old.hotkey != new.hotkey || old.toggle_hotkey != new.toggle_hotkey {
+    if old.hotkey != new.hotkey
+        || old.toggle_hotkey != new.toggle_hotkey
+        || old.talk_hotkey != new.talk_hotkey
+        || old.voice_input != new.voice_input
+    {
         let hotkey_warnings = crate::hotkey::register_all(app, &new);
         if !hotkey_warnings.is_empty() {
             // Keep the shortcuts that still work instead of leaving the user without any.
             new.hotkey = old.hotkey.clone();
             new.toggle_hotkey = old.toggle_hotkey.clone();
+            new.talk_hotkey = old.talk_hotkey.clone();
             crate::hotkey::register_all(app, &new);
             warnings.extend(hotkey_warnings);
         }
+    }
+    if (old.voice_input && !new.voice_input) || (old.wake_word && !new.wake_word) {
+        crate::voice::cancel(app);
     }
 
     if old.launch_at_login != new.launch_at_login {
@@ -322,6 +415,7 @@ mod tests {
         assert!(!d.launch_at_login, "launch at login must never default to on");
         assert_eq!(d.hotkey, "Alt+KeyP");
         assert_eq!(d.outfit, "auto", "Lucy picks her own outfits by default");
+        assert!(!d.check_updates, "no update checks unless the user turns them on");
     }
 
     #[test]
@@ -345,6 +439,30 @@ mod tests {
     }
 
     #[test]
+    fn voice_settings_are_validated() {
+        let s = Settings {
+            speech_engine: "siri".into(),
+            speech_language: "en-US; rm".into(),
+            stt_base_url: "  ".into(),
+            stt_model: String::new(),
+            talk_hotkey: String::new(),
+            ..Settings::default()
+        }
+        .normalized();
+        assert_eq!(s.speech_engine, "apple");
+        assert_eq!(s.speech_language, "");
+        assert_eq!(s.stt_base_url, DEFAULT_STT_URL);
+        assert_eq!(s.stt_model, DEFAULT_STT_MODEL);
+        assert_eq!(s.talk_hotkey, DEFAULT_TALK_HOTKEY);
+        let themed = Settings { theme: "hotpink".into(), ..Settings::default() }.normalized();
+        assert_eq!(themed.theme, "auto");
+        assert!(!Settings::default().voice_input, "voice input must default to off");
+        assert!(!Settings::default().wake_word, "the always-listening wake word must default to off");
+        let bangla = Settings { speech_language: "bn-BD".into(), ..Settings::default() }.normalized();
+        assert_eq!(bangla.speech_language, "bn-BD");
+    }
+
+    #[test]
     fn missing_fields_fall_back_to_defaults() {
         let s: Settings = serde_json::from_str(r#"{"roaming": false, "provider": "anthropic"}"#).unwrap();
         assert!(!s.roaming);
@@ -357,6 +475,8 @@ mod tests {
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(json.contains("\"petEnabled\":true"));
         assert!(json.contains("\"provider\":\"openai\""));
-        assert!(json.contains("\"roamArea\":\"bottom\""));
+        assert!(json.contains("\"roamArea\":\"float\""));
+        let old: Settings = serde_json::from_str(r#"{"roamArea": "bottom"}"#).unwrap();
+        assert_eq!(old.roam_area, RoamArea::Bottom);
     }
 }

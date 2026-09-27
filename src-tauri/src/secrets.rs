@@ -22,10 +22,17 @@ fn account(provider: Provider) -> &'static str {
     }
 }
 
+/// Keychain account for the optional speech-to-text (Whisper) key.
+const STT_ACCOUNT: &str = "speech-to-text";
+/// Keychain account for the web search (Google / Brave) key.
+const SEARCH_ACCOUNT: &str = "web-search";
+
 #[derive(Default)]
 pub struct SecretStore {
     /// Cache so the Keychain is queried at most once per provider per session.
     cache: Mutex<HashMap<Provider, Option<String>>>,
+    /// Same for the extra keys (speech-to-text, web search).
+    named: Mutex<HashMap<&'static str, Option<String>>>,
 }
 
 pub fn validate_key(key: &str) -> Result<&str, String> {
@@ -75,6 +82,64 @@ impl SecretStore {
         }
         log::info!("API key saved for provider {}", provider.as_str());
         Ok(())
+    }
+
+    fn get_named(&self, account: &'static str) -> Option<String> {
+        if let Some(cached) = self.named.lock().ok().and_then(|c| c.get(account).cloned()) {
+            return cached;
+        }
+        let value = platform::get(account);
+        if let Ok(mut cache) = self.named.lock() {
+            cache.insert(account, value.clone());
+        }
+        value
+    }
+
+    fn set_named(&self, account: &'static str, key: &str) -> Result<(), String> {
+        let key = validate_key(key)?;
+        platform::set(account, key)?;
+        if let Ok(mut cache) = self.named.lock() {
+            cache.insert(account, Some(key.to_string()));
+        }
+        log::info!("Key saved ({account})");
+        Ok(())
+    }
+
+    fn delete_named(&self, account: &'static str) -> Result<(), String> {
+        platform::delete(account)?;
+        if let Ok(mut cache) = self.named.lock() {
+            cache.insert(account, None);
+        }
+        log::info!("Key removed ({account})");
+        Ok(())
+    }
+
+    /// The speech-to-text key, if one was saved separately from the chat key.
+    pub fn get_stt(&self) -> Option<String> {
+        self.get_named(STT_ACCOUNT)
+    }
+
+    pub fn set_stt(&self, key: &str) -> Result<(), String> {
+        self.set_named(STT_ACCOUNT, key)
+    }
+
+    pub fn delete_stt(&self) -> Result<(), String> {
+        self.delete_named(STT_ACCOUNT)
+    }
+
+    /// The web search key (Google Programmable Search or Brave), or `SEARCH_API_KEY` in development.
+    pub fn get_search(&self) -> Option<String> {
+        self.get_named(SEARCH_ACCOUNT).or_else(|| {
+            std::env::var("SEARCH_API_KEY").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+        })
+    }
+
+    pub fn set_search(&self, key: &str) -> Result<(), String> {
+        self.set_named(SEARCH_ACCOUNT, key)
+    }
+
+    pub fn delete_search(&self) -> Result<(), String> {
+        self.delete_named(SEARCH_ACCOUNT)
     }
 
     pub fn delete(&self, provider: Provider) -> Result<(), String> {

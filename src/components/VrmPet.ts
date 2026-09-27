@@ -367,7 +367,7 @@ export class VrmPet implements CharacterView {
     };
 
     // Turn slightly toward where she's walking; face the viewer otherwise.
-    const targetYaw = a === "walk" ? this.facing * 0.55 : 0;
+    const targetYaw = a === "walk" ? this.facing * 0.55 : a === "float" ? this.facing * 0.3 : 0;
     this.yaw = approach(this.yaw, targetYaw, 5, dt);
     this.root.rotation.y = this.yaw;
 
@@ -377,7 +377,7 @@ export class VrmPet implements CharacterView {
       this.nextWeightSwap = t + 7 + Math.random() * 9;
     }
     this.weight = approach(this.weight, this.weightSide, 1.6, dt);
-    const w = a === "walk" ? 0 : this.weight; // +1 = weight on her left leg
+    const w = a === "walk" || a === "float" ? 0 : this.weight; // +1 = weight on her left leg
     // Hand-on-hip stance now and then when she's feeling bold.
     if (t >= this.nextStance) {
       const bold = this.mood === "confident" || this.mood === "playful";
@@ -437,6 +437,24 @@ export class VrmPet implements CharacterView {
       rUpper = { x: -s * 0.38, y: -0.1, z: 1.12 };
       lLower = { x: 0, y: -0.25 - Math.max(0, -s) * 0.45, z: 0 };
       rLower = { x: 0, y: 0.25 + Math.max(0, s) * 0.45, z: 0 };
+    } else if (a === "float") {
+      // Hovering: lifted and bobbing, legs trailing with pointed toes, arms loose and out.
+      const bob = Math.sin(t * ((2 * Math.PI) / 2.4));
+      hipsOffset.set(0, 0.04 + bob * 0.025, 0);
+      set("hips", { x: 0.08, y: n2 * 0.05, z: bob * 0.03 });
+      set("spine", { x: -0.05, y: 0, z: -bob * 0.02 });
+      set("chest", { x: breath * 0.015 - 0.03, y: n3 * 0.02, z: 0 });
+      head = { x: -0.05 + n1 * 0.03, y: n2 * 0.07, z: bob * 0.03 };
+      set("leftUpperLeg", { x: -0.14 + bob * 0.04, y: 0, z: 0.05 });
+      set("rightUpperLeg", { x: 0.12 - bob * 0.04, y: 0, z: -0.05 });
+      set("leftLowerLeg", { x: 0.6 + bob * 0.08, y: 0, z: 0 });
+      set("rightLowerLeg", { x: 0.28 - bob * 0.06, y: 0, z: 0 });
+      set("leftFoot", { x: 0.4, y: 0, z: 0 });
+      set("rightFoot", { x: 0.32, y: 0, z: 0 });
+      lUpper = { x: -0.08 + bob * 0.05, y: 0.1, z: -0.86 + bob * 0.06 };
+      rUpper = { x: -0.08 - bob * 0.05, y: -0.1, z: 0.86 - bob * 0.06 };
+      lLower = { x: 0, y: -0.5, z: 0 };
+      rLower = { x: 0, y: 0.5, z: 0 };
     } else if (a === "thinking") {
       head = { x: -0.1 + n1 * 0.02, y: 0.12 + n2 * 0.03, z: 0.14 };
       rUpper = { x: -0.45, y: 0.35, z: 1.1 };

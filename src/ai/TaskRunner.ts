@@ -30,9 +30,9 @@ export class TaskRunner {
     return handler;
   }
 
-  /** Buttons offered when the user has selected text. */
-  menuTasks(): PetTaskHandler[] {
-    return [...this.handlers.values()].filter((h) => h.inMenu);
+  /** Buttons offered for the selected text (some tasks only suit some text, e.g. code). */
+  menuTasks(text?: string): PetTaskHandler[] {
+    return [...this.handlers.values()].filter((h) => h.inMenu && (!h.showFor || (!!text && h.showFor(text))));
   }
 
   async run(task: PetTask, context: TaskContext, options: TaskRunOptions = {}): Promise<TaskResult> {

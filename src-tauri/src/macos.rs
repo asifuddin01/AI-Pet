@@ -48,6 +48,20 @@ extern "C" {
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventPost(tap: u32, event: CGEventRef);
     fn CGEventSourceFlagsState(state_id: i32) -> u64;
+    fn CGEventSourceSecondsSinceLastEventType(state_id: i32, event_type: u32) -> f64;
+}
+
+/// kCGAnyInputEventType
+const ANY_INPUT_EVENT: u32 = u32::MAX;
+
+/// Seconds since the user last touched the keyboard, mouse or trackpad.
+pub fn seconds_since_input() -> f64 {
+    let secs = unsafe { CGEventSourceSecondsSinceLastEventType(K_CG_EVENT_SOURCE_STATE_COMBINED, ANY_INPUT_EVENT) };
+    if secs.is_finite() && secs >= 0.0 {
+        secs
+    } else {
+        0.0
+    }
 }
 
 /// Mouse location in logical points, top-left origin (same space as window positions).

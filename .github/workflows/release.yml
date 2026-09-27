@@ -1,0 +1,103 @@
+name: Release
+
+# Push a tag like v1.0.0 (matching the version in src-tauri/tauri.conf.json), or run it by
+# hand from the Actions tab. It builds the universal app and attaches the .dmg to a DRAFT
+# GitHub release — nothing is public until you press "Publish release".
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and draft release (macOS universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Tests
+        run: |
+          npm test
+          (cd src-tauri && cargo test)
+
+      - name: Version matches the tag
+        id: version
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match tauri.conf.json version $version"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Developer ID signing + notarization when the secrets exist)
+        id: build
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARY_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          signed=false
+          # Only export what is set: empty variables would make Tauri try (and fail) to sign.
+          if [ -n "$CERT" ] && [ -n "$IDENTITY" ]; then
+            export APPLE_CERTIFICATE="$CERT" APPLE_CERTIFICATE_PASSWORD="$CERT_PASSWORD" APPLE_SIGNING_IDENTITY="$IDENTITY"
+            signed=true
+            if [ -n "$NOTARY_ID" ] && [ -n "$NOTARY_PASSWORD" ] && [ -n "$TEAM_ID" ]; then
+              export APPLE_ID="$NOTARY_ID" APPLE_PASSWORD="$NOTARY_PASSWORD" APPLE_TEAM_ID="$TEAM_ID"
+              signed=notarized
+            fi
+          fi
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
+          npm run tauri build -- --target universal-apple-darwin
+
+      - name: Draft the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SIGNED: ${{ steps.build.outputs.signed }}
+        run: |
+          dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          {
+            echo "## Install"
+            echo
+            echo "1. Open the .dmg and drag **AI Pet** to Applications."
+            if [ "$SIGNED" = "notarized" ]; then
+              echo "2. Open it — it's signed and notarized by Apple."
+            else
+              echo "2. This build isn't notarized, so run this once before opening it:"
+              echo '   `xattr -cr "/Applications/AI Pet.app"`'
+            fi
+            echo "3. Allow **Accessibility** when Lucy asks (for ⌥P on selected text)."
+            echo
+            echo "Universal build: Apple Silicon and Intel, macOS 13 or later."
+          } > release-notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$dmg" --clobber
+          else
+            gh release create "$TAG" "$dmg" --draft --title "AI Pet $TAG" --notes-file release-notes.md --target "$GITHUB_SHA"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Pet-release
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg

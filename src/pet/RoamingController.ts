@@ -9,6 +9,10 @@ export interface RoamOptions {
 
 /** Gentle walking speed in points per second (scaled by animation speed). */
 export const WALK_SPEED = 42;
+/** Hovering is a little quicker and covers more ground. */
+export const FLOAT_SPEED = 58;
+const FLOAT_MIN_STEP = 140;
+const FLOAT_MAX_STEP = 560;
 /** Keep individual walks short and calm. */
 const MIN_STEP = 70;
 const MAX_STEP = 420;
@@ -45,6 +49,17 @@ export function chooseDestination(
   if (hopScreens) {
     return { x: b.x + random() * b.width, y: b.y + random() * b.height };
   }
+  const start0 = { x: clamp(current.x, b.x, right(b)), y: clamp(current.y, b.y, bottom(b)) };
+  if (options.roamArea === "float") {
+    // Drift in any direction, bouncing off the screen edges.
+    const angle = random() * Math.PI * 2;
+    const dist = FLOAT_MIN_STEP + random() * (FLOAT_MAX_STEP - FLOAT_MIN_STEP);
+    let dx = Math.cos(angle) * dist;
+    let dy = Math.sin(angle) * dist;
+    if (start0.x + dx > right(b) || start0.x + dx < b.x) dx = -dx;
+    if (start0.y + dy > bottom(b) || start0.y + dy < b.y) dy = -dy;
+    return { x: clamp(start0.x + dx, b.x, right(b)), y: clamp(start0.y + dy, b.y, bottom(b)) };
+  }
 
   const start = { x: clamp(current.x, b.x, right(b)), y: clamp(current.y, b.y, bottom(b)) };
   const step = MIN_STEP + random() * (MAX_STEP - MIN_STEP);
@@ -57,9 +72,10 @@ export function chooseDestination(
   return { x, y };
 }
 
-export function walkDurationMs(from: Point, to: Point, speed: number): number {
+export function walkDurationMs(from: Point, to: Point, speed: number, floating = false): number {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
-  return clamp((distance / (WALK_SPEED * Math.max(speed, 0.25))) * 1000, 800, 20000);
+  const pace = (floating ? FLOAT_SPEED : WALK_SPEED) * Math.max(speed, 0.25);
+  return clamp((distance / pace) * 1000, 800, 20000);
 }
 
 export interface RoamingDeps {
@@ -147,7 +163,8 @@ export class RoamingController {
     }
     this.walking = true;
     this.deps.onWalkStart(to.x < from.x ? "left" : "right");
-    const arrived = await this.deps.moveTo(to, walkDurationMs(from, to, this.deps.options().animationSpeed));
+    const opts = this.deps.options();
+    const arrived = await this.deps.moveTo(to, walkDurationMs(from, to, opts.animationSpeed, opts.roamArea === "float"));
     if (gen !== this.generation) return;
     this.walking = false;
     this.deps.onWalkEnd(arrived ? to : this.deps.getPosition());

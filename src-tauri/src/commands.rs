@@ -32,6 +32,9 @@ pub struct AppStatus {
     /// True when the current provider has everything it needs (model + key if required).
     ai_configured: bool,
     has_api_key: bool,
+    /// A separate speech-to-text (Whisper) key is saved.
+    has_stt_key: bool,
+    has_search_key: bool,
 }
 
 fn platform() -> &'static str {
@@ -69,6 +72,8 @@ pub async fn get_app_status(state: State<'_, AppState>) -> Result<AppStatus, Str
         hotkey_warnings: state.hotkey_warnings.lock().unwrap().clone(),
         ai_configured,
         has_api_key,
+        has_stt_key: state.secrets.get_stt().is_some(),
+        has_search_key: state.secrets.get_search().is_some(),
     })
 }
 
@@ -329,6 +334,114 @@ pub async fn tts_speak(app: AppHandle, text: String, voice: Option<String>, rate
 #[tauri::command]
 pub fn tts_stop(app: AppHandle) {
     crate::tts::stop(&app)
+}
+
+// ---------------------------------------------------------------- voice input
+
+#[tauri::command]
+pub async fn voice_start(
+    app: AppHandle,
+    on_event: Channel<crate::voice::VoiceEvent>,
+    mode: Option<crate::voice::Mode>,
+) -> Result<(), String> {
+    crate::voice::start(app, on_event, mode.unwrap_or_default()).await
+}
+
+/// Seconds since the last keyboard/mouse input anywhere (so check-ins don't talk to an empty room).
+#[tauri::command]
+pub fn get_idle_seconds() -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::seconds_since_input()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        0.0
+    }
+}
+
+#[tauri::command]
+pub async fn voice_stop(app: AppHandle) -> Result<(), String> {
+    crate::voice::stop(app).await
+}
+
+#[tauri::command]
+pub fn voice_cancel(app: AppHandle) {
+    crate::voice::cancel(&app)
+}
+
+#[tauri::command]
+pub async fn set_stt_key(state: State<'_, AppState>, key: String) -> Result<(), String> {
+    state.secrets.set_stt(&key)
+}
+
+#[tauri::command]
+pub async fn delete_stt_key(state: State<'_, AppState>) -> Result<(), String> {
+    state.secrets.delete_stt()
+}
+
+// ---------------------------------------------------------------- tools
+
+#[tauri::command]
+pub async fn get_notes(app: AppHandle) -> Vec<crate::notes::Note> {
+    crate::notes::load(&app)
+}
+
+#[tauri::command]
+pub async fn save_notes(app: AppHandle, notes: Vec<crate::notes::Note>) -> Result<(), String> {
+    if notes.len() > crate::notes::MAX_NOTES {
+        return Err("Too many notes".into());
+    }
+    crate::notes::save(&app, notes)
+}
+
+// ---------------------------------------------------------------- web search
+
+#[tauri::command]
+pub async fn web_search(state: State<'_, AppState>, query: String) -> Result<Vec<crate::search::SearchResult>, String> {
+    let settings = state.settings.read().map(|s| s.clone()).unwrap_or_default();
+    if !settings.ai_enabled {
+        return Err("Network features are switched off in Settings (Allow AI requests).".into());
+    }
+    let key = state
+        .secrets
+        .get_search()
+        .ok_or("Add a search key in Settings → Search to let me look things up.")?;
+    let provider = crate::search::Provider::parse(&settings.search_provider);
+    let results =
+        crate::search::search(&state.ai.client(), provider, &key, &settings.search_engine_id, &query).await?;
+    if let Ok(mut links) = state.search_links.lock() {
+        *links = results.iter().map(|r| r.link.clone()).collect();
+    }
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn open_search_result(state: State<'_, AppState>, url: String) -> Result<(), String> {
+    let allowed = state.search_links.lock().map(|l| l.clone()).unwrap_or_default();
+    crate::search::open(&url, &allowed)
+}
+
+#[tauri::command]
+pub async fn set_search_key(state: State<'_, AppState>, key: String) -> Result<(), String> {
+    state.secrets.set_search(&key)
+}
+
+#[tauri::command]
+pub async fn delete_search_key(state: State<'_, AppState>) -> Result<(), String> {
+    state.secrets.delete_search()
+}
+
+// ---------------------------------------------------------------- updates
+
+#[tauri::command]
+pub async fn check_for_update(state: State<'_, AppState>) -> Result<crate::updates::UpdateInfo, String> {
+    crate::updates::check(&state.ai.client()).await
+}
+
+#[tauri::command]
+pub fn open_release_page(url: String) -> Result<(), String> {
+    crate::updates::open(&url)
 }
 
 // ---------------------------------------------------------------- app

@@ -48,6 +48,27 @@ describe("destination selection", () => {
     expect(hop.x).toBeGreaterThanOrEqual(1440);
   });
 
+  it("hover mode drifts anywhere on screen, in both directions, and stays inside", () => {
+    const b = roamBounds(visible, S, "float");
+    const opts = { roamAllDisplays: false, roamArea: "float" as const, animationSpeed: 1 };
+    let pos: Point = { x: 700, y: 400 };
+    let movedUp = false;
+    let movedDown = false;
+    for (let i = 0; i < 300; i++) {
+      const d = chooseDestination(pos, S, [primary], opts, Math.random)!;
+      expect(d.x).toBeGreaterThanOrEqual(b.x);
+      expect(d.x).toBeLessThanOrEqual(b.x + b.width);
+      expect(d.y).toBeGreaterThanOrEqual(b.y);
+      expect(d.y).toBeLessThanOrEqual(b.y + b.height);
+      if (d.y < pos.y - 50) movedUp = true;
+      if (d.y > pos.y + 50) movedDown = true;
+      pos = d;
+    }
+    expect(movedUp && movedDown).toBe(true);
+    // Hovering is a bit quicker than walking.
+    expect(walkDurationMs({ x: 0, y: 0 }, { x: 420, y: 0 }, 1, true)).toBeLessThan(walkDurationMs({ x: 0, y: 0 }, { x: 420, y: 0 }, 1));
+  });
+
   it("walk duration follows distance and speed", () => {
     const a: Point = { x: 0, y: 0 };
     expect(walkDurationMs(a, { x: 420, y: 0 }, 1)).toBeCloseTo(10000, -2);
